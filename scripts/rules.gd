@@ -18,7 +18,10 @@ const FALL_LOSS := 0.25
 const SUPER_COST := 50
 const AIR_SUPER_COST := 30
 const DASH_SUPER_COST := 25
-const RUN_MULT := 1.65
+const RUN_MULT := 2.3
+const ANIM_SLOW := 1.25          # 모든 기술을 이만큼 느리게 (나가는 거리는 그대로)
+const SUPER_CHARGE := 0.9        # 필살기는 이만큼 모은 뒤 나간다
+const QUICK_CHARGE := 0.45       # 점프·대시 필살기의 모으기
 const JUG_MAX := 5
 const JUG_SCALE := 0.85
 const BLOCK_CHIP := 0.12        # 막으면 이만큼만 아프다
@@ -30,9 +33,9 @@ const FOOD_HEAL := 0.25           # 도시락: 체력의 이만큼 회복      #
 
 ## 유형: 다섯 능력치(1~10) STR 힘 · TEC 조준 거리 · SPD 빠르기 · JMP 점프 · DEF 맷집
 const STYLES := {
-	"brawler": {"name": "주먹꾼", "about": "고루 갖춘 싸움꾼. 때릴수록 게이지가 빨리 차요. 필살기: 연속 주먹", "p": [6, 5, 6, 5, 6], "aspd": 1.0, "jumps": 1, "gain": 1.35, "super": "s_rush"},
-	"agent": {"name": "요원", "about": "빠르고 두 번 뛰어요. 몸은 약해요. 필살기: 번개 돌진", "p": [4, 7, 8, 7, 3], "aspd": 1.25, "jumps": 2, "gain": 1.0, "super": "s_dash"},
-	"psychic": {"name": "염력사", "about": "강공격이 멀리 날아가는 염력탄. 가까이 붙으면 약해요. 필살기: 염력 폭발", "p": [5, 9, 5, 6, 3], "aspd": 1.0, "jumps": 1, "gain": 1.0, "super": "s_blast"},
+	"brawler": {"name": "주먹꾼", "about": "고루 갖춘 싸움꾼. 때릴수록 게이지가 빨리 차요. 필살기: 연속 주먹", "p": [6, 5, 6, 5, 6], "aspd": 1.0, "jumps": 1, "gain": 1.2, "super": "s_rush"},
+	"agent": {"name": "요원", "about": "빠르고 두 번 뛰어요. 몸은 약해요. 필살기: 번개 돌진", "p": [5, 7, 8, 7, 3], "aspd": 1.3, "jumps": 2, "gain": 1.0, "super": "s_dash"},
+	"psychic": {"name": "염력사", "about": "강공격이 멀리 날아가는 염력탄. 가까이 붙으면 약해요. 필살기: 염력 폭발", "p": [5, 8, 5, 6, 6], "aspd": 1.15, "jumps": 1, "gain": 1.25, "super": "s_blast"},
 	"titan": {"name": "장사", "about": "느리지만 세고 튼튼해요. 필살기: 땅 울리기", "p": [8, 3, 3, 4, 8], "aspd": 0.8, "jumps": 1, "gain": 0.85, "super": "s_slam"},
 }
 const STYLE_IDS := ["brawler", "agent", "psychic", "titan"]
@@ -121,21 +124,31 @@ static func derive(style: String, acc: String) -> Dictionary:
 	var p := []
 	for i in 5:
 		p.append(clampi(int(s.p[i]) + int(a.mod[i]), 1, 10))
-	return {"p": p, "power": 0.84 + 0.03 * p[0], "aim": 3.5 + 0.9 * p[1], "speed": 4.3 + 0.3 * p[2], "jump": 8.8 + 0.28 * p[3], "def": 0.88 + 0.02 * p[4],
+	return {"p": p, "power": 0.84 + 0.03 * p[0], "aim": 3.5 + 0.9 * p[1], "speed": 2.0 + 0.13 * p[2], "jump": 8.8 + 0.28 * p[3], "def": 0.88 + 0.02 * p[4],
 		"hp": 200.0 + 1.0 * p[4], "guard": 26.0 + 4.0 * p[4], "aspd": float(s.aspd), "jumps": int(s.jumps) + int(a.get("jumps", 0)), "gain": float(s.gain), "super": str(s.super)}
 
 static func move_for(f: Dictionary, id: String) -> Dictionary:
 	var m: Dictionary = (moves()[id] as Dictionary).duplicate(true)
 	var S: Dictionary = f.S
 	m.id = id
-	m.st = float(m.st) / float(S.aspd)
-	m.rec = float(m.rec) / float(S.aspd)
+	m.st = float(m.st) * ANIM_SLOW / float(S.aspd)
+	m.act = float(m.act) * ANIM_SLOW
+	m.rec = float(m.rec) * ANIM_SLOW / float(S.aspd)
+	if not m.get("fly", false):
+		m.lunge = float(m.lunge) / ANIM_SLOW
+	m.rehit = float(m.rehit) * ANIM_SLOW
+	if m.has("vy") and float(m.vy) < 0.0:
+		m.vy = float(m.vy) / ANIM_SLOW
+	# 필살기: 먼저 힘을 모은다 (그동안은 무적, 움직이지 않음)
+	if int(m.cost) > 0:
+		m.charge = SUPER_CHARGE if int(m.cost) >= SUPER_COST else QUICK_CHARGE
+		m.st = float(m.st) + float(m.charge)
 	m.dmg = float(m.dmg) * float(S.power)
 	var acc_move: bool = id == str(ACCS[f.acc].zx) or id == str(ACCS[f.acc].zc)
 	if f.style == "psychic":
 		# 염력사: 강공격과 장신구 Z+X에 염력탄이 덤
 		if id == "c":
-			m.shot = {"speed": 15.0, "dmg": 8.0, "kb": 7.0, "up": 3.0, "kind": "psy"}
+			m.shot = {"speed": 15.0, "dmg": 11.0, "kb": 7.0, "up": 4.0, "kind": "psy"}
 		elif id == str(ACCS[f.acc].zx) and not m.has("shot"):
 			m.shot = {"speed": 13.0, "dmg": 5.0, "kb": 4.0, "up": 2.0, "kind": "psy"}
 	if f.style == "titan" and acc_move and float(m.wide) > 0.0:
@@ -300,7 +313,15 @@ static func step(f: Dictionary, inp: Dictionary, w: Dictionary, dt: float) -> vo
 			var m: Dictionary = f.m
 			f.t = float(f.t) + dt
 			var t: float = f.t
-			if t < float(m.st) + float(m.act):
+			var ch: float = float(m.get("charge", 0.0))
+			if t < ch:
+				vel = Vector3.ZERO
+			elif ch > 0.0 and not f.released:
+				f.released = true
+				w.events.append({"e": "release", "id": f.id, "pos": f.pos})
+			if t < ch:
+				pass
+			elif t < float(m.st) + float(m.act):
 				if not m.air or m.get("fly", false):
 					var d2 := fwd(f.yaw) * (float(m.lunge) if not m.get("dash", false) or t >= float(m.st) else 0.0)
 					vel.x = d2.x
@@ -368,7 +389,7 @@ static func step(f: Dictionary, inp: Dictionary, w: Dictionary, dt: float) -> vo
 			f.t = float(f.t) + dt
 			vel.x = 0.0
 			vel.z = 0.0
-			if float(f.t) > 0.3:
+			if float(f.t) > 0.38:
 				f.state = "free"
 		"dead":
 			vel.x *= exp(-6.0 * dt)
@@ -384,7 +405,9 @@ static func step(f: Dictionary, inp: Dictionary, w: Dictionary, dt: float) -> vo
 	pos.z += vel.z * dt
 	if top_h(stage, pos.x, pos.z) > pos.y + STEP_UP:
 		pos.z = prev.z
-	vel.y -= GRAVITY * dt
+	# 필살기를 모으는 동안은 공중에서도 멈춰 떠 있다
+	if not (str(f.state) == "atk" and float(f.t) < float(f.m.get("charge", 0.0))):
+		vel.y -= GRAVITY * dt
 	pos.y += vel.y * dt
 	var g := ground_h(stage, pos.x, pos.z, prev.y)
 	if pos.y <= g and vel.y <= 0.0:
@@ -459,12 +482,16 @@ static func _start(f: Dictionary, id: String, w: Dictionary) -> void:
 	f.rehit_t = float(m.rehit)
 	f.buf = false
 	f.shot_done = false
+	f.released = false
 	f.combo_t = 0.0
 	f.run = false
 	if m.has("hop"):
 		f.vel.y = float(m.hop)
 		f.air = true
-	w.events.append({"e": "swing", "id": f.id, "super": int(m.cost) > 0, "fx": str(m.get("fx", ""))})
+	if float(m.get("charge", 0.0)) > 0.0:
+		w.events.append({"e": "charge", "id": f.id, "t": float(m.charge)})
+	else:
+		w.events.append({"e": "swing", "id": f.id, "super": false, "fx": str(m.get("fx", ""))})
 	if str(f.held) != "" and int(f.uses) <= 0 and not m.get("throw", false):
 		f.held_gone = true
 
@@ -702,7 +729,7 @@ static func ai_input(f: Dictionary, fs: Array, w: Dictionary, rnd: float, skill:
 		else:
 			inp.mx = dir.x
 			inp.mz = dir.y
-			inp.run = dist > 6.0
+			inp.run = dist > 4.0
 	if tg.is_empty() or not chase:
 		return inp
 	inp.aim_yaw = atan2(d.x, d.z)
@@ -747,7 +774,7 @@ static func ai_input(f: Dictionary, fs: Array, w: Dictionary, rnd: float, skill:
 			inp.xp = true
 		elif rnd < 0.21 * skill:
 			inp.cp = true
-	elif (f.style == "psychic" or str(f.acc) in ["wand", "wings"]) and dist < 10.0 and absf(d.y) < 1.0 and rnd < 0.03 * skill:
+	elif (f.style == "psychic" or str(f.acc) in ["wand", "wings"]) and dist > 2.5 and dist < 10.0 and absf(d.y) < 1.0 and rnd < 0.07 * skill:
 		inp.mx = 0.0
 		inp.mz = 0.0
 		if f.style == "psychic": inp.cp = true

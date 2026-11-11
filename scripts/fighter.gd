@@ -294,6 +294,8 @@ const POSES := {
 		"hl": Vector3(-84, 0, 10), "kl": Vector3(126, 0, 0), "hr": Vector3(-84, 0, -10), "kr": Vector3(126, 0, 0), "y": -0.34},
 	"block": {"torso": Vector3(14, -18, 0), "head": Vector3(8, 14, 0), "sl": Vector3(-78, 0, -34), "el": Vector3(-118, 0, 0), "sr": Vector3(-70, 0, 34), "er": Vector3(-122, 0, 0),
 		"hl": Vector3(-36, 0, 8), "kl": Vector3(50, 0, 0), "hr": Vector3(14, 0, -10), "kr": Vector3(44, 0, 0), "y": -0.11},
+	"power": {"torso": Vector3(24, 0, 0), "head": Vector3(16, 0, 0), "sl": Vector3(22, 0, 34), "el": Vector3(-115, 0, 0), "sr": Vector3(22, 0, -34), "er": Vector3(-115, 0, 0),
+		"hl": Vector3(-46, 0, 18), "kl": Vector3(70, 0, 0), "hr": Vector3(-46, 0, -18), "kr": Vector3(70, 0, 0), "y": -0.15},
 	"win": {"torso": Vector3(-8, 0, 0), "head": Vector3(-14, 0, 0), "sr": Vector3(-174, 0, -12), "er": Vector3(-8, 0, 0), "sl": Vector3(-10, 0, 30), "el": Vector3(-135, 0, 0),
 		"hl": Vector3(0, 0, 12), "hr": Vector3(0, 0, -12)},
 }
@@ -306,12 +308,19 @@ const CARRY := {
 }
 
 var _goal := {}
-var _rate := 16.0
+var _spd := {}                # 관절마다 움직이는 빠르기(도/초) — 용수철처럼 따라간다
+var _spd_y := 0.0
+var _w := 12.0                # 용수철 세기 (클수록 빨리 따라감)
+var _z := 1.0                 # 1이면 넘치지 않고, 작을수록 살짝 넘쳤다 돌아온다
 var clock := 0.0
 var phase := 0.0
 var run_amt := 0.0
+var move_amt := 0.0
 var spin := 0.0
 var win := false
+
+## 관절마다 따라오는 빠르기: 몸통이 먼저 가고 머리·팔뚝·정강이는 조금 늦게 따라온다
+const LAG := {"hips": 1.0, "torso": 0.95, "head": 0.7, "sl": 0.9, "el": 0.72, "sr": 0.9, "er": 0.72, "hl": 1.0, "kl": 0.85, "hr": 1.0, "kr": 0.85}
 
 static func mirror(p: Dictionary) -> Dictionary:
 	var out := {}
@@ -326,142 +335,214 @@ static func mirror(p: Dictionary) -> Dictionary:
 		out[k2] = Vector3(v.x, -v.y, -v.z)
 	return out
 
+## 두 자세 섞기 (k = 0이면 a, 1이면 b)
+static func mix(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
+	var out := {}
+	for key in JOINTS:
+		out[key] = (a.get(key, Vector3.ZERO) as Vector3).lerp(b.get(key, Vector3.ZERO), k)
+	out.y = lerpf(float(a.get("y", 0.0)), float(b.get("y", 0.0)), k)
+	return out
+
+static func ease_io(x: float) -> float:
+	x = clampf(x, 0.0, 1.0)
+	return x * x * (3.0 - 2.0 * x)
+
+static func ease_out(x: float) -> float:
+	x = clampf(x, 0.0, 1.0)
+	return 1.0 - (1.0 - x) * (1.0 - x) * (1.0 - x)
+
 ## 걷기(0)~달리기(1): 한 바퀴(phase 0~TAU)가 두 걸음
 func _loco(ph: float, amt: float) -> Dictionary:
 	var s := sin(ph)
 	var c := cos(ph)
-	var A := lerpf(30.0, 54.0, amt)
-	var K := lerpf(40.0, 92.0, amt)
-	var kb := lerpf(12.0, 22.0, amt)
-	var arm := lerpf(26.0, 58.0, amt)
-	var elb := lerpf(-35.0, -92.0, amt)
-	return {"torso": Vector3(lerpf(5.0, 20.0, amt), -s * lerpf(7.0, 14.0, amt), 0), "head": Vector3(lerpf(-2.0, -12.0, amt), s * 6.0, 0),
-		"hips": Vector3(0, s * 5.0, 0),
-		"hl": Vector3(-A * s - 8.0 * amt, 0, 3), "hr": Vector3(A * s - 8.0 * amt, 0, -3),
-		"kl": Vector3(kb + K * maxf(0.0, c), 0, 0), "kr": Vector3(kb + K * maxf(0.0, -c), 0, 0),
-		"sl": Vector3(arm * s, 0, 8), "sr": Vector3(-arm * s, 0, -8), "el": Vector3(elb - 12.0 * s, 0, 0), "er": Vector3(elb + 12.0 * s, 0, 0),
-		"y": lerpf(-0.02, -0.05, amt) + absf(c) * lerpf(0.025, 0.06, amt)}
+	var s2 := sin(ph * 2.0)
+	var A := lerpf(24.0, 52.0, amt)          # 허벅지 앞뒤
+	var K := lerpf(34.0, 98.0, amt)          # 무릎 굽힘 (뒤로 차 올릴 때)
+	var kb := lerpf(6.0, 24.0, amt)
+	var arm := lerpf(18.0, 55.0, amt)
+	var elb := lerpf(-14.0, -96.0, amt)
+	return {
+		"torso": Vector3(lerpf(3.0, 19.0, amt) + s2 * lerpf(1.0, 3.0, amt), -s * lerpf(6.0, 12.0, amt), s * lerpf(2.0, 1.0, amt)),
+		"head": Vector3(lerpf(-2.0, -14.0, amt), s * lerpf(4.0, 8.0, amt), -s * 1.5),
+		"hips": Vector3(0, s * lerpf(6.0, 5.0, amt), -s * lerpf(3.0, 1.5, amt)),
+		"hl": Vector3(-A * s - 6.0 * amt, 0, 3), "hr": Vector3(A * s - 6.0 * amt, 0, -3),
+		"kl": Vector3(kb + K * maxf(0.0, c) + 6.0 * maxf(0.0, -s), 0, 0), "kr": Vector3(kb + K * maxf(0.0, -c) + 6.0 * maxf(0.0, s), 0, 0),
+		"sl": Vector3(arm * s, 0, lerpf(6.0, 12.0, amt)), "sr": Vector3(-arm * s, 0, -lerpf(6.0, 12.0, amt)),
+		"el": Vector3(elb - lerpf(6.0, 14.0, amt) * s, 0, 0), "er": Vector3(elb + lerpf(6.0, 14.0, amt) * s, 0, 0),
+		"y": lerpf(-0.015, -0.06, amt) + absf(c) * lerpf(0.02, 0.07, amt)}
 
 func pose_now(name: String) -> void:
 	_goal = POSES[name]
-	_blend(1.0)
-
-func _blend(k: float) -> void:
 	for key in JOINTS:
-		var want: Vector3 = _goal.get(key, Vector3.ZERO)
-		cur[key] = (cur.get(key, want) as Vector3).lerp(want, k)
-	cur_y = lerpf(cur_y, float(_goal.get("y", 0.0)), k)
+		cur[key] = _goal.get(key, Vector3.ZERO)
+		_spd[key] = Vector3.ZERO
+	cur_y = float(_goal.get("y", 0.0))
+	_apply()
+
+## 용수철로 목표 자세를 따라간다 → 갑자기 꺾이지 않고 출발·멈춤이 부드럽다
+func _spring(dt: float) -> void:
+	var steps := maxi(1, ceili(dt * 240.0))
+	var h := dt / steps
+	for i in steps:
+		for key in JOINTS:
+			var w: float = _w * float(LAG[key])
+			var x: Vector3 = cur.get(key, Vector3.ZERO)
+			var v: Vector3 = _spd.get(key, Vector3.ZERO)
+			var want: Vector3 = _goal.get(key, Vector3.ZERO)
+			v += (w * w * (want - x) - 2.0 * _z * w * v) * h
+			cur[key] = x + v * h
+			_spd[key] = v
+		var wy := _w * 0.9
+		_spd_y += (wy * wy * (float(_goal.get("y", 0.0)) - cur_y) - 2.0 * _z * wy * _spd_y) * h
+		cur_y += _spd_y * h
 	_apply()
 
 ## 서 있는 자세에 숨쉬기를 얹는다
 func _idle() -> Dictionary:
 	var p: Dictionary = (POSES[look.guard] as Dictionary).duplicate()
-	var b := sin(clock * 3.2)
-	p.torso = (p.torso as Vector3) + Vector3(b * 1.6, 0, 0)
-	p.sl = (p.sl as Vector3) + Vector3(b * 3.0, 0, 0)
-	p.sr = (p.sr as Vector3) + Vector3(-b * 3.0, 0, 0)
-	p.y = float(p.get("y", 0.0)) + b * 0.008 + (sin(clock * 2.0) * 0.03 + 0.04 if style == "psychic" else 0.0)
+	var b := sin(clock * 2.2)
+	var b2 := sin(clock * 1.1 + 0.7)
+	p.torso = (p.torso as Vector3) + Vector3(b * 1.8, b2 * 2.0, 0)
+	p.head = (p.get("head", Vector3.ZERO) as Vector3) + Vector3(-b * 1.2, -b2 * 3.0, 0)
+	p.sl = (p.sl as Vector3) + Vector3(b * 3.0, 0, b2 * 1.5)
+	p.sr = (p.sr as Vector3) + Vector3(-b * 3.0, 0, b2 * 1.5)
+	p.el = (p.el as Vector3) + Vector3(b * 2.5, 0, 0)
+	p.er = (p.er as Vector3) + Vector3(-b * 2.5, 0, 0)
+	p.y = float(p.get("y", 0.0)) + b * 0.01 + (sin(clock * 1.6) * 0.03 + 0.04 if style == "psychic" else 0.0)
 	return p
 
 ## 미리 보기 화면 등: 규칙 없이 서 있기
 func idle_tick(dt: float) -> void:
 	clock += dt
 	_goal = _idle()
-	_blend(1.0 - exp(-14.0 * dt))
+	_w = 7.0
+	_z = 1.0
+	_spring(dt)
+
+## 기술 하나의 흐름: (모으기) → 준비 → 치기 → 잠깐 멈춤 → 돌아오기, 사이사이를 부드럽게 잇는다
+func _attack(f: Dictionary, base: Dictionary) -> Dictionary:
+	var m: Dictionary = f.m
+	var name := str(m.pose)
+	var t: float = f.t
+	var ch: float = float(m.get("charge", 0.0))
+	var st: float = m.st
+	var act: float = m.act
+	var rec: float = m.rec
+	var flip := name == "jab_l"
+	if flip: name = "jab_r"
+	var rush := name == "rush"
+	if rush: name = "jab_r"
+	var wind: Dictionary = POSES.get(name + "_w", base)
+	var hit: Dictionary = POSES[name]
+	var p: Dictionary
+	if t < ch:
+		# 필살기 모으기: 웅크리고 힘을 모으며 몸이 떨린다
+		p = mix(base, POSES.power, ease_out(t / 0.25))
+		var sh := sin(clock * 70.0) * 2.5 * clampf(t / ch, 0.0, 1.0)
+		p.torso = (p.torso as Vector3) + Vector3(sh, sh * 0.6, 0)
+		_w = 14.0
+		_z = 1.0
+	elif t < st:
+		p = mix(POSES.power if ch > 0.0 else base, wind, ease_io((t - ch) / maxf(st - ch, 0.01)))
+		_w = 18.0
+		_z = 1.0
+	elif rush:
+		flip = fmod((t - st) * 7.0, 1.0) > 0.5
+		p = hit
+		_w = 30.0
+		_z = 0.8
+	elif t < st + act:
+		# 치는 순간은 빠르게, 끝에서 살짝 넘쳤다 돌아온다
+		p = mix(wind, hit, ease_out((t - st) / maxf(minf(act, 0.12), 0.04)))
+		_w = 30.0
+		_z = 0.62
+	elif t < st + act + rec * 0.35:
+		p = hit
+		_w = 22.0
+		_z = 0.8
+	else:
+		p = mix(hit, base, ease_io((t - st - act - rec * 0.35) / maxf(rec * 0.65, 0.05)))
+		_w = 13.0
+		_z = 1.0
+	if flip:
+		p = mirror(p)
+	return p
 
 ## 규칙 쪽 상태를 그림으로 (f = Rules의 선수)
 func sync(f: Dictionary, dt: float) -> void:
 	clock += dt
 	position = f.pos
-	rotation.y = lerp_angle(rotation.y, float(f.yaw), 1.0 - exp(-26.0 * dt))
+	rotation.y = lerp_angle(rotation.y, float(f.yaw), 1.0 - exp(-13.0 * dt))
 	var v: Vector3 = f.vel
 	var hs := Vector2(v.x, v.z).length()
 	var p: Dictionary = {}
-	_rate = 16.0
 	var tumbling := false
 	var riding := false
 	var held := str(f.held)
 	var carry := false
+	var base: Dictionary = POSES.air_down if f.air else POSES[look.guard]
+	_w = 12.0
+	_z = 1.0
 	match str(f.state):
 		"free":
 			carry = true
-			run_amt = lerpf(run_amt, 1.0 if f.run else 0.0, 1.0 - exp(-10.0 * dt))
+			run_amt = lerpf(run_amt, 1.0 if f.run else 0.0, 1.0 - exp(-5.0 * dt))
+			move_amt = lerpf(move_amt, clampf(hs / 2.0, 0.0, 1.0) if not f.air else 0.0, 1.0 - exp(-8.0 * dt))
+			# 발이 미끄러지지 않게 간 거리만큼 걸음을 옮긴다 (한 바퀴 = 두 걸음)
+			phase = fmod(phase + hs / lerpf(1.7, 3.0, run_amt) * TAU * dt, TAU)
 			if win and not f.air:
 				p = POSES.win
 				carry = false
+				_w = 8.0
 			elif f.air:
-				p = POSES.air_up if v.y > 1.5 else POSES.air_down
-				_rate = 11.0
-			elif f.moving:
-				phase = fmod(phase + dt * TAU * lerpf(2.0, 2.7, run_amt), TAU)
-				p = _loco(phase, run_amt * (0.0 if f.aim else 1.0))
-				_rate = 28.0
-				if f.aim:
+				p = mix(POSES.air_down, POSES.air_up, clampf(v.y / 6.0 + 0.5, 0.0, 1.0))
+				_w = 9.0
+			else:
+				var stand: Dictionary = POSES.aim if f.aim else _idle()
+				p = mix(stand, _loco(phase, run_amt * (0.0 if f.aim else 1.0)), move_amt)
+				if f.aim and move_amt > 0.05:
 					for k in ["torso", "head", "sl", "el", "sr", "er"]:
 						p[k] = POSES.aim[k]
-			elif f.aim:
-				p = POSES.aim
-			else:
-				p = _idle()
-				_rate = 13.0
+				_w = lerpf(9.0, 15.0, move_amt)
 		"atk":
-			var m: Dictionary = f.m
-			var name := str(m.pose)
-			var t: float = f.t
-			var st: float = m.st
-			var flip := name == "jab_l"
-			if flip: name = "jab_r"
-			if name == "rush":
-				name = "jab_r"
-				flip = fmod(t * 8.0, 1.0) > 0.5
-				p = POSES.jab_r if t >= st else POSES.jab_r_w
-				_rate = 46.0
-			elif t < st:
-				p = POSES.get(name + "_w", POSES.air_up if f.air else POSES[look.guard])
-				_rate = clampf(4.5 / maxf(st, 0.02), 16.0, 60.0)
-			elif t < st + float(m.act) + float(m.rec) * 0.45:
-				p = POSES[name]
-				_rate = 50.0
-			else:
-				p = POSES.air_down if f.air else POSES[look.guard]
-				_rate = 10.0
-				carry = true
-			if flip:
-				p = mirror(p)
-			riding = name == "ride" and t >= st
+			p = _attack(f, base)
+			riding = str(f.m.pose) == "ride" and float(f.t) >= float(f.m.st)
+			carry = float(f.t) > float(f.m.st) + float(f.m.act) + float(f.m.rec) * 0.5
 		"guard":
 			p = POSES.block
-			_rate = 34.0
+			_w = 22.0
 		"hurt":
-			p = POSES.hurt if int(f.id + f.hits) % 2 == 0 else mirror(POSES.hurt)
 			p = POSES.hurt
-			_rate = 36.0
+			_w = 24.0
+			_z = 0.45      # 맞으면 휘청이며 흔들린다
 		"down", "dead":
 			if f.air:
 				p = POSES.fly
 				tumbling = true
-				_rate = 24.0
+				_w = 14.0
+				_z = 0.7
 			else:
 				p = POSES.down
-				_rate = 26.0
+				_w = 16.0
+				_z = 0.55
 		"getup":
-			p = POSES.getup
-			_rate = 15.0
+			p = mix(POSES.getup, POSES[look.guard], ease_io(float(f.t) / 0.35))
+			_w = 12.0
 	if carry and CARRY.has(held):
 		p = p.duplicate()
 		p.merge(CARRY[held], true)
 	_goal = p
-	_blend(1.0 - exp(-_rate * dt))
+	_spring(dt)
 	# 날아갈 때 뒤로 빙글 돈다
 	if tumbling:
-		spin -= dt * (5.0 + hs * 0.5)
+		spin -= dt * (3.5 + hs * 0.35)
 		body.rotation.x = spin
 	else:
 		spin = 0.0
-		body.rotation.x = lerp_angle(body.rotation.x, 0.0, 1.0 - exp(-30.0 * dt))
+		body.rotation.x = lerp_angle(body.rotation.x, 0.0, 1.0 - exp(-12.0 * dt))
 	rocket.visible = riding
 	hold(held)
-	visible = str(f.state) != "out" and (float(f.inv) <= 0.0 or str(f.state) in ["down", "dead"] or fmod(clock * 12.0, 1.0) > 0.35)
+	visible = str(f.state) != "out" and (float(f.inv) <= 0.0 or str(f.state) in ["down", "dead", "atk"] or fmod(clock * 12.0, 1.0) > 0.35)
 
 # ─────────── 장신구·무기 ───────────
 

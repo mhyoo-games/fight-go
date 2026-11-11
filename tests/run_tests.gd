@@ -70,7 +70,7 @@ func _move() -> void:
 	var w := world()
 	var a := mk(0)
 	run([a], w, 1.0, {0: {"mx": 1.0}})
-	ok(a.pos.x > 5.0 and a.pos.x < 7.0 and a.pos.y == 0.0 and absf(a.yaw - PI / 2) < 0.01, "걷기 %.1f" % a.pos.x)
+	ok(a.pos.x > 2.2 and a.pos.x < 3.6 and a.pos.y == 0.0 and absf(a.yaw - PI / 2) < 0.01, "걷기 %.1f" % a.pos.x)
 	tap([a], w, 0, {"vp": true})
 	ok(a.air and a.vel.y > 5.0, "점프")
 	var top := 0.0
@@ -281,7 +281,13 @@ func _supers() -> void:
 		a.state = "free"; a.gauge = 60.0; b.hp = b.max_hp; b.state = "free"; b.pos = Vector3(0, 0, 1.1); b.vel = Vector3.ZERO
 		tap([a, b], w, 0, {"z": true, "aim_yaw": 0.0, "xp": true, "x": true, "c": true})
 		ok(a.m.id == Rules.STYLES[st].super and a.gauge < 15.0, st + " Z+X+C 필살기, 게이지 씀")
-		run([a, b], w, 1.2)
+		var ch := false
+		for e in w.events:
+			if e.e == "charge": ch = true
+		ok(ch, st + " 필살기는 모으기부터")
+		run([a, b], w, 0.7)
+		ok(b.hp == b.max_hp and a.pos.distance_to(Vector3.ZERO) < 0.05, st + " 모으는 동안은 안 나가고 제자리")
+		run([a, b], w, 1.8)
 		ok(b.hp <= b.max_hp - 15.0, st + " 필살기는 아프다 (%.0f)" % (b.max_hp - b.hp))
 	var w2 := world()
 	var j := mk(0)
@@ -289,6 +295,9 @@ func _supers() -> void:
 	tap([j], w2, 0, {"vp": true}); run([j], w2, 0.15)
 	tap([j], w2, 0, {"xp": true, "x": true, "c": true})
 	ok(j.m.id == "a_super" and j.gauge < 15.0, "공중 X+C 점프 필살기")
+	var y0: float = j.pos.y
+	run([j], w2, 0.3)
+	ok(absf(j.pos.y - y0) < 0.02, "점프 필살기를 모으는 동안 공중에 멈춘다")
 
 func _stage() -> void:
 	var s := Rules.city()
@@ -305,12 +314,12 @@ func _stage() -> void:
 	run([a], w, 1.0, {0: {"mx": 1.0}})
 	ok(a.pos.x < 15.1 and a.pos.y == 0.0, "높은 옥상 벽에 막힌다")
 	var st2 := mk(5, "brawler", "none", Vector3(11, 0, 4))
-	run([st2], w, 1.2, {5: {"mx": 1.0}})
+	run([st2], w, 2.0, {5: {"mx": 1.0}})
 	ok(is_equal_approx(st2.pos.y, 2.0) and st2.pos.x > 15.0, "계단으로 걸어 올라간다")
 	var pl := mk(6, "brawler", "none", Vector3(26, 2, 0))
-	run([pl], w, 1.6, {6: {"mx": 1.0}})
+	run([pl], w, 2.6, {6: {"mx": 1.0}})
 	ok(pl.pos.x > 31.0 and pl.outs == 0, "널빤지로 건너간다")
-	run([pl], w, 1.6, {6: {"mx": -1.0}})
+	run([pl], w, 2.8, {6: {"mx": -1.0}})
 	ok(pl.pos.x < 27.0 and is_equal_approx(pl.pos.y, 2.0), "돌아올 수도 있다")
 	var b := mk(1, "brawler", "none", Vector3(0, 0, 6.5))
 	run([b], w, 1.5, {1: {"mz": 1.0}})

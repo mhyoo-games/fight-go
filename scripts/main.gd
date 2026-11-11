@@ -1,6 +1,6 @@
 extends Node3D
 ## 대기실(유형·능력치·장신구) ↔ 상점 ↔ 싸움 ↔ 결과
-## 개발용: -- --shot=title|shop|lineup|poses|fightN|roomN|result --out=/tmp/x.png
+## 개발용: -- --shot=title|shop|lineup|poses|fightN|roomN|super|strip_<walk|run|combo|strong|super>|result --out=/tmp/x.png
 
 const SAVE := "user://fightgo_save.json"
 
@@ -83,12 +83,86 @@ func _dev(shot: String, out: String) -> void:
 			for i in game.fs.size():
 				game.fs[i].pos = Vector3(66 + i * 3.5, 0.1, (i % 2) * 2.0 - 1.0)
 		await get_tree().create_timer(float(shot.substr(5 if shot.begins_with("fight") else 4)) if shot.length() > 5 else 6.0).timeout
+	elif shot == "super":
+		# 필살기 모으기(0.5초) → 나가는 순간(1.25초)을 찍는다
+		fight(true)
+		game.intro = 0.0
+		await get_tree().create_timer(0.3).timeout
+		var me: Dictionary = game.fs[0]
+		for i in game.fs.size():
+			game.fs[i].pos = Vector3(-4.0 + i * 2.2, 0.0, 1.0)
+			game.fs[i].vel = Vector3.ZERO
+		me.gauge = 100.0
+		me.yaw = PI / 2
+		me.state = "free"
+		Rules._start(me, str(me.S.super), game.w)
+		await get_tree().create_timer(0.55).timeout
+		get_viewport().get_texture().get_image().save_png(out + "_a.png")
+		await get_tree().create_timer(0.55).timeout
+		get_viewport().get_texture().get_image().save_png(out + "_b.png")
+		get_tree().quit()
+		return
+	elif shot.begins_with("strip"):
+		# 동작 확인: 한 선수가 정해진 입력으로 움직이는 것을 여러 장 찍는다 (out은 파일 앞부분)
+		await _strip(shot.substr(6), out)
+		get_tree().quit()
+		return
 	elif shot == "result":
 		last = {"winner": 0, "name": "나", "me": true, "hp": 42.0, "outs": 1, "coins": 310, "kos": 2}
 		title()
 	await get_tree().create_timer(0.5).timeout
 	get_viewport().get_texture().get_image().save_png(out)
 	get_tree().quit()
+
+func _strip(what: String, out: String) -> void:
+	_clear()
+	var w := {"stage": Rules.city(), "shots": [], "items": [], "events": []}
+	var st := "titan" if what == "super" else "brawler"
+	var a := Rules.new_fighter(0, st, "none", -1, Vector3(-3, 0, 2))
+	var b := Rules.new_fighter(1, "agent", "none", -1, Vector3(3, 0, 2))
+	a.inv = 0.0; b.inv = 0.0; a.air = false; b.air = false
+	a.yaw = PI / 2; b.yaw = -PI / 2
+	if what == "super": a.gauge = 100.0
+	var va := Fighter.new(); add_child(va); va.build(st)
+	var vb := Fighter.new(); add_child(vb); vb.build("agent")
+	extras.append(va); extras.append(vb)
+	var aura: Node3D = null
+	cam.current = true
+	cam.fov = 40
+	var dt := 1.0 / 60.0
+	var frame := 0
+	var shots := 0
+	var every := 6
+	while shots < 16:
+		var ia := {}
+		var tt := frame * dt
+		match what:
+			"walk": ia = {"mx": 1.0}
+			"run": ia = {"mx": 1.0, "run": true}
+			"combo":
+				if frame % 22 == 2: ia = {"xp": true, "x": true}
+				b.pos = a.pos + Vector3(1.0, 0, 0)
+			"strong":
+				if frame == 2: ia = {"cp": true, "c": true}
+				b.pos = Vector3(a.pos.x + 1.0, b.pos.y, a.pos.z) if tt < 0.3 else b.pos
+			"super":
+				if frame == 2: ia = {"z": true, "x": true, "c": true, "xp": true, "aim_yaw": PI / 2}
+				b.pos = a.pos + Vector3(2.0, 0, 0) if tt < 0.5 else b.pos
+		Rules.step(a, ia, w, dt)
+		Rules.step(b, {}, w, dt)
+		Rules.resolve([a, b], w, dt)
+		w.events.clear()
+		va.sync(a, dt)
+		vb.sync(b, dt)
+		var c: Vector3 = (a.pos as Vector3) if what in ["walk", "run"] else Vector3(0, 0, 2)
+		cam.position = c + Vector3(0.0, 1.6, 6.5)
+		cam.look_at(c + Vector3(0, 0.9, 0), Vector3.UP)
+		frame += 1
+		await get_tree().process_frame
+		if frame % every == 0:
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png("%s%02d.png" % [out, shots])
+			shots += 1
 
 func _clear() -> void:
 	for c in ui.get_children():

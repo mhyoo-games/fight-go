@@ -11,8 +11,10 @@
 
 - 옛 온라인 난투 게임에서 영감을 받았지만 **새로 만든 게임**이다. 다른 게임·만화의 이름·캐릭터·기술 이름·그림을 쓰지 않고, 다른 회사·게임 이름을 README·화면·이력서에 넣지 않는다. 유형 이름도 우리 것(주먹꾼·요원·염력사·장사).
 - 키(사용자가 정한 것, 바꾸지 않는다): 방향키 걷기, 같은 방향 두 번 = 달리기 / Z 조준 / X 약 / C 강 / V 점프 / Z+X·Z+C 장신구 기술 / Z+X+C 필살기 / 달리며 X·C 대시 공격, 달리며 X+C 대시 필살기 / 공중 X+C 점프 필살기 / 무기 옆 X·C 줍기 / 문 앞 ↑ / X+C 같이 = 막기 / 땅에 닿기 직전 V = 낙법 / 누운 채 X·C = 기상 공격.
-- **밸런스가 가장 중요**(사용자 요청): 누운 상대는 못 때린다(`_can_hit`), 일어날 때 무적, 띄운 상대는 `JUG_MAX`번까지 이어 때릴 수 있고 갈수록 약해진다(`JUG_SCALE`). 숫자를 바꾸면 `_juggle`·`_ai_match`(유형별 승리 수) 테스트를 같이 본다. 컴퓨터끼리는 장사가 조금 유리하게 나오는 편.
-- **캐릭터는 사용자가 준 Kenney Animated Characters Protagonists(CC0, `assets/hero/`, 모델 하나 + 옷 4장)**, 나머지(동작·장신구·무기·무대)는 코드로. 팩에는 run·idle·jump 동작뿐이라 쓰지 않고, `scripts/fighter.gd`가 뼈를 직접 움직인다: 자세 `POSES`(내 관절 각도, 팔을 내린 것이 기준, `<이름>_w`는 준비 자세) → `_apply`가 모델 뼈(`BONES`, T자세라 팔은 `OFF_L/R`로 맞춤, 좌표 변환 `CB`)에 넣는다. 걷기·달리기는 `_loco`가 계산, `sync`가 규칙 상태 → 준비/치기/돌아오기 자세와 섞는 빠르기를 고른다. 장신구 모양 `equip`·줍는 무기 `weapon_mesh`/`hold`는 `_socket`(뼈에 붙는 자리, 내 좌표·크기 그대로)에 붙인다. 유형별 차이는 `LOOKS`(옷·크기·서 있는 자세), 컴퓨터는 색을 살짝 입힌다. 사용자가 "동작이 뚝뚝 끊긴다"고 했던 것 → 자세는 늘 부드럽게 이어지게.
+- **밸런스가 가장 중요**(사용자 요청): 누운 상대는 못 때린다(`_can_hit`), 일어날 때 무적, 띄운 상대는 `JUG_MAX`번까지 이어 때릴 수 있고 갈수록 약해진다(`JUG_SCALE`). 숫자를 바꾸면 `_juggle`·`_ai_match`(유형별 승리 수) 테스트를 같이 본다. 컴퓨터끼리 24판이면 네 유형이 5~7번씩 이기는 정도로 맞춰 두었다.
+- **캐릭터는 사용자가 준 Kenney Animated Characters Protagonists(CC0, `assets/hero/`, 모델 하나 + 옷 4장)**, 나머지(동작·장신구·무기·무대)는 코드로. 팩에는 run·idle·jump 동작뿐이라 쓰지 않고, `scripts/fighter.gd`가 뼈를 직접 움직인다: 자세 `POSES`(내 관절 각도, 팔을 내린 것이 기준, `<이름>_w`는 준비 자세) → `_apply`가 모델 뼈(`BONES`, T자세라 팔은 `OFF_L/R`로 맞춤, 좌표 변환 `CB`)에 넣는다. 걷기·달리기는 `_loco`가 계산, `sync`가 규칙 상태 → 준비/치기/돌아오기 자세와 섞는 빠르기를 고른다. 장신구 모양 `equip`·줍는 무기 `weapon_mesh`/`hold`는 `_socket`(뼈에 붙는 자리, 내 좌표·크기 그대로)에 붙인다. 유형별 차이는 `LOOKS`(옷·크기·서 있는 자세), 컴퓨터는 색을 살짝 입힌다. 사용자가 "동작이 뚝뚝 끊긴다", "프레임이 너무 빨라 부자연스럽다", "관절 하나하나 자연스럽게"라고 했던 것 → 자세는 관절마다 용수철(`_spring`, 세기 `_w`·넘침 `_z`, 관절별 늦음 `LAG`: 몸통이 먼저, 머리·팔뚝·정강이가 늦게)로 따라가고, 기술은 `_attack`이 (모으기) → 준비 → 치기(살짝 넘침) → 멈춤 → 돌아오기를 부드럽게 잇는다. 걸음은 간 거리만큼 옮긴다(발이 안 미끄러지게).
+- 빠르기(사용자 요청 "움직임이 너무 빠르고 걷기·달리기가 비슷"): 걷기 `speed` = 2.0 + 0.13×SPD(초당 m), 달리기는 `RUN_MULT`(2.3)배, 걷기는 똑바로 작은 걸음·달리기는 앞으로 숙이고 팔을 굽힌다(`_loco`). 모든 기술은 `ANIM_SLOW`(1.25)배 느리게, 나가는 거리는 그대로.
+- 필살기(사용자 요청 "즉발이 아니라 이펙트가 보이고 1초쯤 뒤에"): Z+X+C 필살기는 `SUPER_CHARGE`(0.9초), 점프·대시 필살기는 `QUICK_CHARGE`(0.45초) 동안 제자리(공중이면 멈춰 뜸)에서 무적으로 모은 뒤 나간다. 이벤트 `charge` → `release`, 화면은 `match._auras`(빛 기둥·발밑 고리·솟는 빛 조각, 유형별 색 `SUPER_COL`).
 - 막기(사용자 요청): X+C를 같이 누르고 있기. 앞에서 온 공격만 막고(`BLOCK_CHIP`만큼만 아픔), 막기 힘(`guard`, DEF에 따라)이 다하면 깨져 멍해진다. X 바로 뒤에 C가 눌리면 `GUARD_CANCEL` 안에서 공격을 접고 막는다. 달리는 중 X+C는 대시 필살기, Z+X+C는 필살기, 공중 X+C는 점프 필살기.
 - 낙법(`TECH_WINDOW` 안에 V → 눕지 않고 일어남), 기상 공격(누운 채 X/C → `wake`), 도시락(`food`, 줍자마자 회복)도 있다.
 - 무대는 `Rules.city()` 하나가 기준: `plats`(kind roof·step·hut·box·plank·room·wall), `doors`(짝끼리 오감), `items`(무기 자리), `ramps`(컴퓨터가 오르는 길). `scripts/stage.gd`는 이것을 읽어 그리고 꾸밈만 더한다. 창고(실내)는 x>50에 멀리 떨어뜨려 둔 곳(`Rules.zone`).
@@ -27,4 +29,4 @@
 ## 돌려 보기
 
 - 테스트: `godot --headless --import` 후 `godot --headless -s tests/run_tests.gd`
-- 화면: `xvfb-run -a -s "-screen 0 1280x720x24" godot --rendering-driver opengl3 --audio-driver Dummy -- --shot=title|shop|lineup|poses|fight8|room6|result --out=/tmp/x.png` (fightN = 컴퓨터끼리 N초 싸운 장면, roomN = 창고 안, lineup·poses = 캐릭터 모아 보기). 소프트웨어 렌더라 느리다(40초짜리는 몇 분).
+- 화면: `xvfb-run -a -s "-screen 0 1280x720x24" godot --rendering-driver opengl3 --audio-driver Dummy -- --shot=title|shop|lineup|poses|fight8|room6|result --out=/tmp/x.png` (fightN = 컴퓨터끼리 N초 싸운 장면, roomN = 창고 안, lineup·poses = 캐릭터 모아 보기, super = 필살기 모으기·나가기 두 장 `<out>_a.png`·`_b.png`, strip_walk|run|combo|strong|super = 0.1초마다 16장 `<out>00.png`…(동작 확인용)). 소프트웨어 렌더라 느리다(40초짜리는 몇 분).

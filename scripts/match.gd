@@ -13,6 +13,8 @@ var w := {}
 var fs: Array = []
 var views: Array = []
 var shadows: Array = []
+var auras: Array = []
+const SUPER_COL := {"brawler": Color(1.0, 0.55, 0.15), "agent": Color(1.0, 0.95, 0.3), "psychic": Color(0.75, 0.45, 1.0), "titan": Color(1.0, 0.3, 0.2)}
 var names: Array = []
 var human := 0
 var time_left := TIME
@@ -85,6 +87,7 @@ func setup(style: String, acc: String, cpus := 3) -> void:
 		sh.material_override = sm
 		add_child(sh)
 		shadows.append(sh)
+		auras.append(_make_aura(SUPER_COL[st]))
 	for i in 6:
 		_spawn_item()
 	cam = Camera3D.new()
@@ -94,6 +97,70 @@ func setup(style: String, acc: String, cpus := 3) -> void:
 	cam_c = fs[0].pos
 	_camera(1.0)
 	Sound.music("rush")
+
+## 필살기를 모을 때 몸을 둘러싸는 빛 기둥과 발밑 고리
+func _make_aura(c: Color) -> Node3D:
+	var n := Node3D.new()
+	n.visible = false
+	add_child(n)
+	for i in 2:
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.5 - i * 0.12; cm.bottom_radius = 0.7 - i * 0.15; cm.height = 2.4; cm.radial_segments = 20
+		cm.cap_top = false; cm.cap_bottom = false
+		var mi := MeshInstance3D.new()
+		mi.mesh = cm
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		m.albedo_color = Color(c.r, c.g, c.b, 0.16 if i == 0 else 0.26)
+		mi.material_override = m
+		mi.position.y = 1.2
+		n.add_child(mi)
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.75; tm.outer_radius = 0.9; tm.rings = 24; tm.ring_segments = 6
+	var ring := MeshInstance3D.new()
+	ring.mesh = tm
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	rm.albedo_color = Color(c.r, c.g, c.b, 0.9)
+	ring.material_override = rm
+	ring.position.y = 0.05
+	ring.scale = Vector3(1, 0.3, 1)
+	n.add_child(ring)
+	return n
+
+## 모으는 동안: 빛 기둥이 점점 커지고 빛 조각이 위로 솟는다
+func _auras() -> void:
+	for i in fs.size():
+		var f: Dictionary = fs[i]
+		var a: Node3D = auras[i]
+		var ch: float = float(f.m.get("charge", 0.0)) if str(f.state) == "atk" else 0.0
+		var on := ch > 0.0 and float(f.t) < ch
+		a.visible = on and (views[i] as Node3D).visible
+		if not on:
+			continue
+		var k := clampf(float(f.t) / ch, 0.0, 1.0)
+		a.position = f.pos
+		var pulse := 1.0 + sin(clock * 30.0) * 0.06
+		a.scale = Vector3(lerpf(0.5, 1.15, k) * pulse, lerpf(0.4, 1.0, Fighter.ease_out(k)), lerpf(0.5, 1.15, k) * pulse)
+		a.rotation.y += 0.12
+		if Engine.get_physics_frames() % 2 == 0:
+			var c: Color = SUPER_COL[f.style]
+			var ang := rng.randf() * TAU
+			var r := rng.randf_range(0.4, 0.9)
+			var bm := BoxMesh.new()
+			bm.size = Vector3(0.07, 0.3, 0.07)
+			var mi := _fx_node(bm, (f.pos as Vector3) + Vector3(cos(ang) * r, rng.randf_range(0.0, 0.5), sin(ang) * r), Color(c.r, c.g, c.b, 0.9))
+			(mi.material_override as StandardMaterial3D).blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			var tw := create_tween()
+			tw.set_parallel(true)
+			tw.tween_property(mi, "position:y", mi.position.y + rng.randf_range(1.4, 2.4), 0.45)
+			tw.tween_property(mi.material_override, "albedo_color:a", 0.0, 0.45)
+			tw.chain().tween_callback(mi.queue_free)
 
 func _exit_tree() -> void:
 	if _helper:
@@ -194,6 +261,7 @@ func _physics_process(dt: float) -> void:
 			_burst(p + Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.4, 1.3), rng.randf_range(-0.3, 0.3)), 0.7, FX_COL[str(f.m.fx)])
 		if f.run and not f.air and Engine.get_physics_frames() % 7 == 0:
 			_burst(p + Vector3(0, 0.1, 0), 0.45, Color(0.95, 0.9, 0.8, 0.6))
+	_auras()
 	_shots()
 	_items(dt)
 	_camera(1.0 - exp(-4.0 * dt))
@@ -254,6 +322,26 @@ func _events() -> void:
 			"land":
 				Sound.play("land", -12.0 if not e.hard else -4.0)
 				_ring((fs[int(e.id)].pos as Vector3) + Vector3(0, 0.05, 0), 0.9 if not e.hard else 1.5, Color(0.95, 0.9, 0.8, 0.7))
+			"charge":
+				var fc: Dictionary = fs[int(e.id)]
+				Sound.play("gain", 0.0, 0.7)
+				Sound.play("boost", -6.0, 0.6)
+				_ring((fc.pos as Vector3) + Vector3(0, 0.05, 0), 2.4, SUPER_COL[fc.style])
+				if float(e.t) >= Rules.SUPER_CHARGE - 0.01:
+					say("%s 필살기!" % names[int(e.id)], float(e.t))
+			"release":
+				var fr: Dictionary = fs[int(e.id)]
+				var c: Color = SUPER_COL[fr.style]
+				Sound.play("dash", 0.0)
+				Sound.play("hit", -4.0, 0.7)
+				_burst((fr.pos as Vector3) + Vector3(0, 1.0, 0), 3.4, Color(c.r, c.g, c.b, 0.8))
+				_burst((fr.pos as Vector3) + Vector3(0, 1.0, 0), 2.0, Color(1, 1, 1, 0.9))
+				_ring((fr.pos as Vector3) + Vector3(0, 0.08, 0), 3.6, c)
+				shake = maxf(shake, 0.35)
+				hitstop = maxf(hitstop, 0.06)
+				var fx := str(fr.m.get("fx", ""))
+				if fx in ["quake", "psy", "bolt"]:
+					_ring((fr.pos as Vector3) + Vector3(0, 0.08, 0), 4.5, FX_COL[fx])
 			"swing":
 				Sound.play("whoosh", -8.0 if not e.super else 0.0, 1.3 if not e.super else 0.8)
 				var fp: Vector3 = fs[int(e.id)].pos
