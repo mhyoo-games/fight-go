@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  deployments: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT: 4.6.3-stable
+
+jobs:
+  build:
+    name: 규칙 테스트 + 웹 빌드
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot 받기
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT }}-web
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot && cd ~/godot
+          curl -fsSL -o g.zip "https://github.com/godotengine/godot-builds/releases/download/${GODOT}/Godot_v${GODOT}_linux.x86_64.zip"
+          unzip -q g.zip && rm g.zip
+          curl -fsSL -o t.tpz "https://github.com/godotengine/godot-builds/releases/download/${GODOT}/Godot_v${GODOT}_export_templates.tpz"
+          unzip -q t.tpz 'templates/web_nothreads_*' 'templates/version.txt' && rm t.tpz
+      - name: 설치
+        run: |
+          sudo ln -sf ~/godot/Godot_v${GODOT}_linux.x86_64 /usr/local/bin/godot
+          V=$(cat ~/godot/templates/version.txt)
+          mkdir -p ~/.local/share/godot/export_templates/$V
+          cp ~/godot/templates/* ~/.local/share/godot/export_templates/$V/
+          godot --headless --version
+      - name: 가져오기(import)
+        run: timeout 300 godot --headless --import || true
+      - name: 규칙 테스트 (이동·연타·장신구 기술·필살기·무대·컴퓨터끼리 싸움)
+        run: |
+          godot --headless -s tests/run_tests.gd 2>&1 | tee test.log
+          grep -E "통과 [0-9]+, 실패 0" test.log
+      - name: 게임이 오류 없이 켜지는지 (5초)
+        run: |
+          timeout 60 godot --headless --audio-driver Dummy --quit-after 300 2>&1 | tee run.log
+          ! grep -E "SCRIPT ERROR|Parse Error" run.log
+      - name: 웹으로 내보내기
+        run: |
+          mkdir -p build/web
+          godot --headless --export-release "Web" build/web/index.html
+          ls -la build/web
+          test -s build/web/index.pck
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: build/web
+
+  deploy:
+    name: GitHub Pages에 올리기
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - name: 멈춰 있는 예전 배포 치우기 (있으면)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ github.repository }}
+        run: |
+          for sha in $(gh api "repos/$R/deployments?environment=github-pages&per_page=10" --jq '.[].sha' | sort -u); do
+            if [ "$sha" != "$GITHUB_SHA" ]; then
+              gh api -X POST "repos/$R/pages/deployments/$sha/cancel" >/dev/null 2>&1 && echo "치움: $sha" || true
+            fi
+          done
+      - id: d
+        uses: actions/deploy-pages@v4
