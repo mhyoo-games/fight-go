@@ -48,8 +48,23 @@ func _draw() -> void:
 		draw_rect(Rect2(x + bw * 0.5 - 1, y + 34 * u, 2, 16 * u), Color(1, 1, 1, 0.7))
 		if not alive:
 			_txt("탈락", Vector2(x, y + 28 * u), int(26 * u), Color(1, 0.4, 0.4), HORIZONTAL_ALIGNMENT_CENTER, bw)
-		elif i == m.human and not m.demo:
-			_txt(Rules.ACCS[f.acc].name, Vector2(x, y + 68 * u), int(15 * u), Color(0.85, 0.9, 1.0))
+		else:
+			var held := str(f.held)
+			var line: String = Rules.ACCS[f.acc].name
+			if held != "":
+				line = "%s ×%d" % [Rules.WEAPONS[held].name, maxi(0, int(f.uses))]
+			_txt(line, Vector2(x, y + 68 * u), int(15 * u), Color(1.0, 0.85, 0.4) if held != "" else Color(0.85, 0.9, 1.0))
+	if m.combo_t > 0.0 and m.combo_n >= 2:
+		_txt("%d 콤보!" % m.combo_n, Vector2(40 * u, H * 0.3), int((40 + mini(m.combo_n, 8) * 3) * u), Color(1.0, 0.6, 0.2, clampf(m.combo_t / 0.3, 0.0, 1.0)))
+	if not m.demo and m.intro <= 0.0:
+		var me: Dictionary = m.fs[m.human]
+		if str(me.held) == "" and Rules.alive(me):
+			for it in m.w.items:
+				if (it.pos as Vector3).distance_to(me.pos) < 1.2:
+					_txt("X 또는 C: %s 줍기" % Rules.WEAPONS[it.kind].name, Vector2(0, H * 0.62), int(24 * u), Color(1, 0.95, 0.6), HORIZONTAL_ALIGNMENT_CENTER, W)
+		for d in m.w.stage.doors:
+			if (d.at as Vector3).distance_to(me.pos) < 1.0 and Rules.alive(me):
+				_txt("↑ 문으로 들어가기", Vector2(0, H * 0.66), int(24 * u), Color(0.7, 1.0, 0.8), HORIZONTAL_ALIGNMENT_CENTER, W)
 	if m.intro > 0.0:
 		_txt("준비!", Vector2(0, H * 0.4), int(90 * u), Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, W)
 	elif m.msg_t > 0.0:

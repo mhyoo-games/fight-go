@@ -1,6 +1,6 @@
 class_name RooftopStage
 extends Node3D
-## 해 질 녘 옥상 무대 (코드로 만듦): 가운데 큰 옥상, 옆 옥상 두 층, 옥탑방·계단·난간·빨랫줄·물탱크, 둘레 건물들
+## 해 질 녘 옥상 마을 (코드로 만듦). 발판·문·상자는 Rules.city()를 그대로 읽어 그리고, 그 위에 꾸밈을 더한다.
 
 var rng := RandomNumberGenerator.new()
 var _lit := []
@@ -26,41 +26,131 @@ func b(size: Vector3, pos: Vector3, c: Color, rot_y := 0.0) -> MeshInstance3D:
 func build() -> void:
 	rng.seed = 12
 	_env()
-	# 가운데 싸움터 옥상
-	_roof(Vector3(0, 0, 0), Vector2(15.6, 8), Color("d8a65c"), Color("b9793a"), Color("a88492"))
-	# 왼쪽 낮은 옥상, 오른쪽 높은 옥상
-	_roof(Vector3(-11.8, -1.6, -1.0), Vector2(8, 7), Color("cfa06a"), Color("a86f3e"), Color("8f7f9a"))
-	_roof(Vector3(11.3, 1.4, -1.5), Vector2(7, 7), Color("d4a35f"), Color("b0763a"), Color("b08a7a"))
-	_stairs(Vector3(5.4, 0, 1.6), 1.4, 1.0)
-	_stairs(Vector3(-10.2, -1.6, 1.8), 1.6, 1.0)
-	# 옥탑방 (가운데 뒤쪽)
-	_hut(Vector3(-4.5, 0, -2.4), Vector3(3.2, 2.3, 2.6), Color("c98f7a"))
-	_hut(Vector3(12.1, 1.4, -3.4), Vector3(2.6, 2.1, 2.2), Color("b7a08a"))
-	# 난간 (뒤쪽)
-	_rail(Vector3(-0.5, 0, -3.85), 6.0)
-	_rail(Vector3(5.0, 0, -3.85), 4.5)
-	# 소품
-	_tank(Vector3(-14.0, -1.6, -3.2))
-	_ac(Vector3(-3.0, 2.5, -3.2)); _ac(Vector3(-5.6, 2.5, -3.2))
-	_laundry(Vector3(-15.3, -1.6, -4.2), Vector3(-9.0, -1.6, -4.2))
-	_plant(Vector3(-7.3, 0, -3.6)); _plant(Vector3(14.3, 1.4, 1.5)); _plant(Vector3(7.3, 0, -3.6))
-	_antenna(Vector3(12.9, 3.75, -3.9))
+	var st := Rules.city()
+	var floors := [Color("d8a65c"), Color("cfa06a"), Color("d4a35f"), Color("c9a878")]
+	var walls := [Color("a88492"), Color("8f7f9a"), Color("b08a7a"), Color("8a94a8")]
+	var n := 0
+	var step_i := 0
+	for p in st.plats:
+		var c := Vector3((p.x0 + p.x1) * 0.5, p.h, (p.z0 + p.z1) * 0.5)
+		var sz := Vector2(p.x1 - p.x0, p.z1 - p.z0)
+		match str(p.kind):
+			"roof":
+				_roof(c, sz, floors[n % 4], floors[n % 4].darkened(0.25), walls[n % 4])
+				n += 1
+			"step":
+				b(Vector3(sz.x, p.h - p.base, sz.y), Vector3(c.x, (p.h + p.base) * 0.5, c.z), Color("b98a6a") if step_i % 2 == 0 else Color("a87a5c"))
+				step_i += 1
+			"hut":
+				_hut(Vector3(c.x, p.base, c.z), Vector3(sz.x, p.h - p.base, sz.y), Color("c98f7a") if c.x < 0 else Color("b7a08a"))
+			"box":
+				_crate(Vector3(c.x, p.base, c.z), Vector3(sz.x, p.h - p.base, sz.y))
+			"plank":
+				b(Vector3(sz.x + 0.6, 0.14, sz.y), c + Vector3(0, -0.07, 0), Color("b98a5a"))
+				for i in 5:
+					b(Vector3(0.05, 0.15, sz.y), c + Vector3(-sz.x * 0.5 + i * sz.x / 4.0, -0.065, 0), Color("8a6238"))
+			"room":
+				_room(p)
+	for d in st.doors:
+		_door(d.at)
+	# 꾸밈
+	_rail(Vector3(3, 0, -6.85), 14.0)
+	_rail(Vector3(-22, -2, -5.85), 12.0)
+	_rail(Vector3(18, 2, -6.85), 4.0)
+	_rail(Vector3(36, 1.6, -4.85), 9.0)
+	_tank(Vector3(-27, -2, -4.2))
+	_tank(Vector3(39, 1.6, -3.4))
+	_ac(Vector3(-12, 2.6, -5.5)); _ac(Vector3(-10.2, 2.6, -5.5)); _ac(Vector3(22.5, 4.6, -5.6))
+	_laundry(Vector3(-28, -2, 5.2), Vector3(-20, -2, 5.2))
+	_laundry(Vector3(-6, 0, -6.3), Vector3(2, 0, -6.3))
+	for q in [Vector3(-14.3, 0, -6.3), Vector3(8.5, 0, -6.3), Vector3(14.3, 0, 6.3), Vector3(26.3, 2, 4.3), Vector3(-28.3, -2, -5.3), Vector3(40.3, 1.6, 4.3), Vector3(16, 2, -6.3)]:
+		_plant(q)
+	_antenna(Vector3(24.3, 4.85, -6.0))
+	_antenna(Vector3(-12.5, 2.85, -6.2))
+	_sign(Vector3(9, 0, -6.6))
 	# 둘레 건물
 	var cols := [Color("8d7f95"), Color("a38a8f"), Color("c49a86"), Color("7f8aa0"), Color("b58f6a"), Color("9a8478")]
-	for i in 26:
-		var x := rng.randf_range(-38, 38)
-		var z := rng.randf_range(-42, -9)
-		var w := rng.randf_range(6, 11)
-		var d := rng.randf_range(6, 10)
-		var top := rng.randf_range(-7, 13) + (-z - 9) * 0.25
-		_building(Vector3(x, top, z), Vector3(w, 40, d), cols[i % cols.size()])
-	for sx in [-1.0, 1.0]:
-		for i in 4:
-			_building(Vector3(sx * rng.randf_range(24, 34), rng.randf_range(-4, 9), rng.randf_range(-6, 6)), Vector3(8, 40, 8), cols[(i + 2) % cols.size()])
+	for i in 34:
+		var x := rng.randf_range(-52, 58)
+		var z := rng.randf_range(-48, -13)
+		var top := rng.randf_range(-8, 13) + (-z - 12) * 0.25
+		_building(Vector3(x, top, z), Vector3(rng.randf_range(6, 11), 40, rng.randf_range(6, 10)), cols[i % cols.size()])
+	for i in 6:
+		_building(Vector3(-40 - rng.randf_range(0, 12), rng.randf_range(-6, 8), rng.randf_range(-10, 8)), Vector3(8, 40, 8), cols[(i + 2) % cols.size()])
 	_flush(_lit, Color(1.0, 0.86, 0.5), true)
 	_flush(_dim, Color(0.2, 0.2, 0.3), false)
-	# 저 아래 거리
-	b(Vector3(200, 1, 200), Vector3(0, -34, 0), Color("4a4458"))
+	b(Vector3(300, 1, 200), Vector3(0, -34, 0), Color("4a4458"))
+
+## 나무 상자
+func _crate(base: Vector3, size: Vector3) -> void:
+	b(size, base + Vector3(0, size.y * 0.5, 0), Color("b9854a"))
+	var e := 0.09
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			b(Vector3(e, size.y + 0.02, e), base + Vector3(sx * (size.x - e) * 0.5, size.y * 0.5, sz * (size.z - e) * 0.5), Color("7a5228"))
+		b(Vector3(e, e, size.z + 0.02), base + Vector3(sx * (size.x - e) * 0.5, size.y - e * 0.5, 0), Color("7a5228"))
+		b(Vector3(size.x + 0.02, e, e), base + Vector3(0, size.y - e * 0.5, sx * (size.z - e) * 0.5), Color("7a5228"))
+	b(Vector3(size.x * 0.6, 0.08, 0.03), base + Vector3(0, size.y * 0.5, size.z * 0.5 + 0.01), Color("7a5228"), 0.0).rotation.z = 0.6
+
+## 문 (at = 문 앞 자리). 문틀이 빛난다
+func _door(at: Vector3) -> void:
+	var p := at + Vector3(0, 0, -0.47)
+	b(Vector3(1.5, 2.2, 0.1), p + Vector3(0, 1.1, 0), Color("3a2a34"))
+	var d := b(Vector3(1.2, 2.0, 0.06), p + Vector3(0, 1.0, 0.05), Color("ffd070"))
+	(d.material_override as StandardMaterial3D).emission_enabled = true
+	(d.material_override as StandardMaterial3D).emission = Color("ffc050")
+	(d.material_override as StandardMaterial3D).emission_energy_multiplier = 0.9
+	b(Vector3(0.5, 0.22, 0.05), p + Vector3(0, 2.42, 0.04), Color("3aa85a"))
+	b(Vector3(1.3, 0.03, 0.9), at + Vector3(0, 0.015, 0.0), Color("c8382f"))
+
+func _sign(pos: Vector3) -> void:
+	for sx in [-1.4, 1.4]:
+		b(Vector3(0.1, 2.4, 0.1), pos + Vector3(sx, 1.2, 0), Color("4a4650"))
+	var s := b(Vector3(3.6, 1.3, 0.12), pos + Vector3(0, 2.6, 0), Color("e8503a"))
+	(s.material_override as StandardMaterial3D).emission_enabled = true
+	(s.material_override as StandardMaterial3D).emission = Color("e8503a")
+	(s.material_override as StandardMaterial3D).emission_energy_multiplier = 0.5
+	b(Vector3(3.2, 0.12, 0.14), pos + Vector3(0, 2.9, 0), Color("ffe08a"))
+	b(Vector3(2.2, 0.12, 0.14), pos + Vector3(-0.5, 2.5, 0), Color("ffe08a"))
+
+## 창고 안: 바닥·뒷벽·옆벽(앞은 열어 둠)·선반·전등
+func _room(p: Dictionary) -> void:
+	var cx: float = (p.x0 + p.x1) * 0.5
+	var w: float = p.x1 - p.x0
+	var d: float = p.z1 - p.z0
+	b(Vector3(w + 2, 0.4, d + 2), Vector3(cx, -0.2, 0), Color("8a8494"))
+	for i in int(w / 2.0):
+		b(Vector3(0.04, 0.01, d), Vector3(p.x0 + i * 2.0 + 1.0, 0.005, 0), Color("746e80"))
+	b(Vector3(w + 2, 7, 0.5), Vector3(cx, 3.5, p.z0 - 0.25), Color("a89a8a"))
+	b(Vector3(w + 2, 1.2, 0.56), Vector3(cx, 0.6, p.z0 - 0.25), Color("7a6a62"))
+	for sx in [-1.0, 1.0]:
+		b(Vector3(0.5, 7, d + 1), Vector3(cx + sx * (w * 0.5 + 0.25), 3.5, 0), Color("9a8c80"))
+	b(Vector3(w + 60, 30, 1), Vector3(cx, 8, p.z0 - 3), Color("2a2430"))
+	b(Vector3(w + 60, 1, 60), Vector3(cx, -0.9, 0), Color("2a2430"))
+	for i in 4:
+		var x: float = p.x0 + 3.0 + i * 5.2
+		var win := b(Vector3(1.6, 1.0, 0.1), Vector3(x + 1.5, 4.6, p.z0 + 0.03), Color("ffe6a0"))
+		(win.material_override as StandardMaterial3D).emission_enabled = true
+		(win.material_override as StandardMaterial3D).emission = Color("ffd070")
+		var l := OmniLight3D.new()
+		l.position = Vector3(x + 1.0, 4.2, 0)
+		l.omni_range = 9.0
+		l.light_color = Color(1.0, 0.85, 0.6)
+		l.light_energy = 1.4
+		add_child(l)
+		b(Vector3(0.5, 0.12, 0.5), Vector3(x + 1.0, 4.9, 0), Color("3a3a44"))
+	# 뒷벽 선반과 통
+	b(Vector3(5, 0.1, 0.6), Vector3(cx - 1.5, 2.2, p.z0 + 0.3), Color("7a5228"))
+	for i in 5:
+		b(Vector3(0.5, 0.5 + (i % 2) * 0.2, 0.4), Vector3(cx - 3.3 + i * 0.9, 2.5 + (i % 2) * 0.1, p.z0 + 0.3), [Color("c8382f"), Color("3a8ae0"), Color("e0a020")][i % 3])
+	for q in [Vector3(p.x0 + 1.2, 0, p.z0 + 1.0), Vector3(p.x1 - 1.0, 0, -1.5), Vector3(cx + 2.5, 0, p.z0 + 0.8)]:
+		var t := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.45; cm.bottom_radius = 0.45; cm.height = 1.2
+		t.mesh = cm
+		t.position = q + Vector3(0, 0.6, 0)
+		t.material_override = m(Color("3a7a6a"), 0.5)
+		add_child(t)
 
 func _env() -> void:
 	var e := Environment.new()
@@ -93,7 +183,7 @@ func _env() -> void:
 	sun.light_color = Color(1.0, 0.82, 0.6)
 	sun.light_energy = 1.25
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 60.0
+	sun.directional_shadow_max_distance = 45.0
 	add_child(sun)
 
 ## 옥상 하나: 바닥 + 테두리 + 아래 건물 몸통 (pos = 바닥 가운데, 높이는 pos.y)
@@ -150,9 +240,7 @@ func _flush(xf: Array, c: Color, glow: bool) -> void:
 func _hut(pos: Vector3, size: Vector3, c: Color) -> void:
 	b(size, pos + Vector3(0, size.y * 0.5, 0), c)
 	b(Vector3(size.x + 0.5, 0.25, size.z + 0.5), pos + Vector3(0, size.y + 0.12, 0), Color("d8a65c"))
-	b(Vector3(0.9, 1.6, 0.08), pos + Vector3(-size.x * 0.2, 0.8, size.z * 0.5 + 0.03), Color("5a3a2e"))
-	b(Vector3(0.08, 0.08, 0.1), pos + Vector3(-size.x * 0.2 + 0.3, 0.8, size.z * 0.5 + 0.08), Color("e8c84a"))
-	var w := b(Vector3(0.8, 0.7, 0.08), pos + Vector3(size.x * 0.22, 1.3, size.z * 0.5 + 0.03), Color("ffe08a"))
+	var w := b(Vector3(0.7, 0.6, 0.08), pos + Vector3(size.x * 0.34, 1.5, size.z * 0.5 + 0.03), Color("ffe08a"))
 	(w.material_override as StandardMaterial3D).emission_enabled = true
 	(w.material_override as StandardMaterial3D).emission = Color("ffd070")
 
