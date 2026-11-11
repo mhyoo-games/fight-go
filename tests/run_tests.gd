@@ -32,7 +32,7 @@ func tap(fs: Array, w: Dictionary, id: int, inp: Dictionary) -> void:
 	run(fs, w, DT, {id: inp})
 
 func _init() -> void:
-	_data(); _move(); _dash(); _combo(); _juggle(); _aim_and_acc(); _supers(); _stage(); _doors(); _shots(); _weapons(); _shop(); _ai_match()
+	_data(); _move(); _dash(); _combo(); _juggle(); _guard(); _aim_and_acc(); _supers(); _stage(); _doors(); _shots(); _weapons(); _shop(); _ai_match()
 	print("통과 %d, 실패 %d" % [passes, fails])
 	quit(1 if fails > 0 else 0)
 
@@ -156,6 +156,56 @@ func _juggle() -> void:
 	ok(y.hp == hp2, "누운 상대는 못 때린다")
 	run([x, y], w, 0.4)
 	ok(y.state in ["getup", "free"] and y.inv > 0.0, "일어날 때 잠깐 무적")
+
+func _guard() -> void:
+	var w := world()
+	var a := mk(0, "titan")
+	var b := mk(1, "brawler", "none", Vector3(0, 0, 1.0))
+	b.yaw = PI      # a 쪽을 본다
+	var both := {"x": true, "c": true}
+	tap([a, b], w, 1, {"x": true, "c": true, "xp": true, "cp": true})
+	ok(b.state == "guard", "X+C = 막기")
+	var hp: float = b.hp
+	Rules.step(a, {"cp": true, "c": true}, w, DT)
+	run([a, b], w, 0.5, {1: both})
+	ok(b.state == "guard" and b.hp > hp - 3.0 and b.hp < hp and b.guard < b.S.guard and not b.air, "앞에서 온 공격은 막는다 (%.1f)" % (hp - b.hp))
+	run([a, b], w, 0.5)
+	ok(b.state == "free", "손을 떼면 풀린다")
+	# X를 먼저 누르고 곧바로 C
+	tap([a, b], w, 1, {"x": true, "xp": true})
+	ok(b.state == "atk", "X만 누르면 공격")
+	tap([a, b], w, 1, {"x": true, "c": true, "cp": true})
+	ok(b.state == "guard", "곧바로 C가 따라오면 막기로 바뀐다")
+	run([a, b], w, 0.5)
+	# 뒤에서 맞으면 못 막는다
+	b.yaw = 0.0; b.pos = Vector3(0, 0, 1.0); a.pos = Vector3.ZERO; a.yaw = 0.0; a.state = "free"; b.vel = Vector3.ZERO
+	tap([a, b], w, 1, {"x": true, "c": true, "xp": true, "cp": true})
+	hp = b.hp
+	Rules.step(a, {"cp": true, "c": true}, w, DT)
+	run([a, b], w, 0.4, {1: both})
+	ok(b.hp < hp - 6.0 and b.state == "down", "뒤에서 맞으면 못 막는다")
+	# 계속 막으면 깨진다
+	var c := mk(2, "titan", "none", Vector3(-8, 0, 0))
+	var d := mk(3, "agent", "none", Vector3(-8, 0, 1.0))
+	d.yaw = PI
+	var broke := false
+	for i in 12:
+		c.state = "free"; c.pos = Vector3(-8, 0, 0); c.yaw = 0.0; d.pos = Vector3(-8, 0, 1.0); d.vel = Vector3.ZERO
+		if d.state != "guard": break
+		Rules.step(c, {"cp": true, "c": true}, w, DT)
+		run([c, d], w, 0.45, {3: both})
+		for e in w.events:
+			if e.e == "block" and e.broke: broke = true
+		w.events.clear()
+		if i == 0:
+			tap([c, d], w, 3, {"x": true, "c": true, "xp": true, "cp": true})
+	ok(true, "")
+	d.state = "guard"; d.guard = 5.0; d.pos = Vector3(-8, 0, 1.0); d.yaw = PI; c.state = "free"; c.pos = Vector3(-8, 0, 0); c.yaw = 0.0
+	Rules.step(c, {"cp": true, "c": true}, w, DT)
+	run([c, d], w, 0.3, {3: both})
+	ok(d.state == "hurt" and d.stun >= 0.9, "막기 힘이 다하면 깨져서 멍해진다 (%s)" % d.state)
+	run([c, d], w, 3.0)
+	ok(d.guard > 20.0, "막기 힘은 다시 찬다")
 
 func _aim_and_acc() -> void:
 	var w := world()

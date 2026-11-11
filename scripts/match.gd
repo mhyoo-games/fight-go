@@ -136,7 +136,8 @@ func _human_input(f: Dictionary) -> Dictionary:
 	}
 	prev = now
 	# Z 조준: 조준 거리(TEC) 안의 가장 가까운 상대를 본다
-	var tg := Rules.nearest(f, fs, true, float(f.S.aim))
+	inp.face = now.x and now.c and not now.z      # 막을 때는 가까운 상대 쪽을 본다
+	var tg := Rules.nearest(f, fs, true, float(f.S.aim) if now.z else 3.0)
 	if not tg.is_empty():
 		var d: Vector3 = (tg.pos as Vector3) - (f.pos as Vector3)
 		inp.aim_yaw = atan2(d.x, d.z)
@@ -241,6 +242,14 @@ func _events() -> void:
 				if int(e.by) == human and not demo:
 					combo_n = combo_n + 1 if combo_t > 0.0 else 1
 					combo_t = 1.3
+			"block":
+				Sound.play("shield" if not e.broke else "miss", -3.0, rng.randf_range(0.95, 1.1))
+				_ring(e.pos, 0.6, Color(0.6, 0.85, 1.0))
+				_burst(e.pos, 0.8, Color(0.7, 0.9, 1.0))
+				hitstop = maxf(hitstop, 0.03)
+				if e.broke:
+					say("막기가 깨졌다!", 0.9)
+					shake = maxf(shake, 0.3)
 			"jump": Sound.play("jump", -10.0)
 			"land":
 				Sound.play("land", -12.0 if not e.hard else -4.0)

@@ -5,6 +5,7 @@ extends RefCounted
 ## 키: 방향키 걷기, 같은 방향 두 번 = 달리기 / Z 조준 / X 약 / C 강 / V 점프
 ##   X X X 연타 · Z+X, Z+C 장신구 기술(무기를 들면 무기 기술) · Z+X+C 필살기(게이지 50)
 ##   달리면서 X·C = 대시 공격, 달리면서 X+C = 대시 필살기(게이지 25)
+##   X+C 같이 누르고 있기 = 막기 (앞에서 오는 공격만. 많이 막으면 깨진다. 뒤에서 맞으면 그냥 맞는다)
 ##   공중 X·C, 공중 X+C = 점프 필살기(게이지 30) · 떨어진 무기 옆에서 X나 C = 줍기
 ## 누운 상대는 못 때린다. 공중에 뜬 상대는 이어 때릴 수 있다(JUG_MAX번까지).
 
@@ -19,6 +20,10 @@ const DASH_SUPER_COST := 25
 const RUN_MULT := 1.65
 const JUG_MAX := 5
 const JUG_SCALE := 0.85
+const BLOCK_CHIP := 0.12        # 막으면 이만큼만 아프다
+const BLOCK_REGEN := 14.0       # 막기 힘이 1초에 돌아오는 양
+const BREAK_STUN := 1.0         # 막기가 깨지면 이만큼 멍해진다
+const GUARD_CANCEL := 0.07      # X와 C를 거의 같이 누르면 공격 대신 막기
 
 ## 유형: 다섯 능력치(1~10) STR 힘 · TEC 조준 거리 · SPD 빠르기 · JMP 점프 · DEF 맷집
 const STYLES := {
@@ -113,7 +118,7 @@ static func derive(style: String, acc: String) -> Dictionary:
 	for i in 5:
 		p.append(clampi(int(s.p[i]) + int(a.mod[i]), 1, 10))
 	return {"p": p, "power": 0.84 + 0.03 * p[0], "aim": 3.5 + 0.9 * p[1], "speed": 4.3 + 0.3 * p[2], "jump": 8.8 + 0.28 * p[3], "def": 0.88 + 0.02 * p[4],
-		"hp": 200.0 + 1.0 * p[4], "aspd": float(s.aspd), "jumps": int(s.jumps) + int(a.get("jumps", 0)), "gain": float(s.gain), "super": str(s.super)}
+		"hp": 200.0 + 1.0 * p[4], "guard": 26.0 + 4.0 * p[4], "aspd": float(s.aspd), "jumps": int(s.jumps) + int(a.get("jumps", 0)), "gain": float(s.gain), "super": str(s.super)}
 
 static func move_for(f: Dictionary, id: String) -> Dictionary:
 	var m: Dictionary = (moves()[id] as Dictionary).duplicate(true)
@@ -138,7 +143,7 @@ static func new_fighter(id: int, style: String, acc: String, team: int, pos: Vec
 	return {"id": id, "style": style, "acc": acc, "S": S, "team": team, "pos": pos, "vel": Vector3.ZERO, "yaw": 0.0,
 		"hp": float(S.hp), "max_hp": float(S.hp), "gauge": 0.0, "state": "free", "t": 0.0, "m": {}, "hit": [], "rehit_t": 0.0,
 		"combo": 0, "combo_t": 0.0, "buf": false, "air": true, "jumps": int(S.jumps) - 1, "inv": 1.0, "stun": 0.0, "moving": false, "run": false,
-		"shot_done": false, "outs": 0, "aim": false, "jug": 0, "held": "", "uses": 0, "door_cd": 0.0, "dealt": 0.0, "kos": 0, "hits": 0}
+		"shot_done": false, "outs": 0, "aim": false, "jug": 0, "held": "", "uses": 0, "door_cd": 0.0, "dealt": 0.0, "kos": 0, "hits": 0, "guard": float(S.guard), "blocks": 0}
 
 static func fwd(yaw: float) -> Vector3:
 	return Vector3(sin(yaw), 0, cos(yaw))
@@ -202,7 +207,25 @@ static func step(f: Dictionary, inp: Dictionary, w: Dictionary, dt: float) -> vo
 	var vel: Vector3 = f.vel
 	f.moving = false
 	f.aim = false
+	var holding: bool = inp.get("x", false) and inp.get("c", false) and not inp.get("z", false)
+	if str(f.state) != "guard":
+		f.guard = minf(float(S.guard), float(f.guard) + BLOCK_REGEN * dt)
+	# X를 누른 바로 뒤에 C가 따라 눌리면(또는 반대로) 공격을 접고 막는다
+	if str(f.state) == "atk" and holding and not f.air and float(f.t) < GUARD_CANCEL and str(f.m.id) in ["x1", "c", "wb_x", "wb_c", "wr_x", "wz_x", "w_butt"]:
+		if int(f.m.use) > 0:
+			f.uses = int(f.uses) + int(f.m.use)
+			f.held_gone = false
+		f.state = "guard"
+		f.t = 0.0
 	match str(f.state):
+		"guard":
+			f.t = float(f.t) + dt
+			vel.x *= exp(-14.0 * dt)
+			vel.z *= exp(-14.0 * dt)
+			if inp.has("aim_yaw") and inp.get("face", false):
+				f.yaw = float(inp.aim_yaw)
+			if (not holding and float(f.t) > 0.12) or f.air:
+				f.state = "free"
 		"free":
 			var mv := Vector2(float(inp.get("mx", 0.0)), float(inp.get("mz", 0.0))).limit_length(1.0)
 			var aim: bool = inp.get("z", false) and inp.has("aim_yaw")
@@ -239,7 +262,12 @@ static func step(f: Dictionary, inp: Dictionary, w: Dictionary, dt: float) -> vo
 			var both: bool = (xp and inp.get("c", false)) or (cp and inp.get("x", false))
 			var id := ""
 			var wp: Dictionary = WEAPONS.get(str(f.held), {})
-			if (xp or cp) and not f.air and wp.is_empty() and _pickup(f, w):
+			if holding and not f.air and not f.run:
+				f.state = "guard"
+				f.t = 0.0
+				vel.x = 0.0
+				vel.z = 0.0
+			elif (xp or cp) and not f.air and wp.is_empty() and _pickup(f, w):
 				pass
 			elif f.air:
 				if both and float(f.gauge) >= AIR_SUPER_COST: id = "a_super"
@@ -506,6 +534,23 @@ static func resolve(fs: Array, w: Dictionary, dt: float) -> void:
 	w.shots = keep
 
 static func _hurt(b: Dictionary, a: Dictionary, dmg: float, dir: Vector3, kb: float, up: float, stun: float, down: bool, w: Dictionary) -> void:
+	# 막기: 앞에서 온 공격이면 조금만 아프고 밀리기만 한다. 막기 힘이 다하면 깨진다
+	if str(b.state) == "guard" and dir.dot(fwd(b.yaw)) < -0.2:
+		b.guard = float(b.guard) - dmg
+		b.hp = maxf(1.0, float(b.hp) - dmg * BLOCK_CHIP / float(b.S.def))
+		b.blocks = int(b.blocks) + 1
+		b.vel = dir * minf(kb, 6.0) * 0.5
+		if not a.is_empty():
+			a.gauge = minf(100.0, float(a.gauge) + dmg * 0.4 * float(a.S.gain))
+		b.gauge = minf(100.0, float(b.gauge) + dmg * 0.5)
+		var broke: bool = float(b.guard) <= 0.0
+		if broke:
+			b.state = "hurt"
+			b.stun = BREAK_STUN
+			b.t = 0.0
+			b.guard = float(b.S.guard) * 0.5
+		w.events.append({"e": "block", "pos": (b.pos as Vector3) + fwd(b.yaw) * 0.4 + Vector3(0, 1.0, 0), "id": b.id, "broke": broke})
+		return
 	var juggle: bool = str(b.state) == "down" and b.air
 	var real := dmg / float(b.S.def)
 	if juggle:
@@ -652,6 +697,12 @@ static func ai_input(f: Dictionary, fs: Array, w: Dictionary, rnd: float, skill:
 		if float(f.gauge) >= DASH_SUPER_COST and rnd < 0.08: inp.xp = true; inp.c = true
 		elif rnd < 0.2: inp.xp = true
 		else: inp.cp = true
+	elif close and str(tg.state) == "atk" and float(tg.t) < float(tg.m.st) and float(f.guard) > 8.0 and fwd(tg.yaw).dot(Vector3(d.x, 0, d.z)) < 0.0 and rnd < 0.4 * skill:
+		# 상대가 치려고 하면 막는다
+		inp.x = true
+		inp.c = true
+		inp.mx = 0.0
+		inp.mz = 0.0
 	elif close:
 		inp.z = rnd > 0.55
 		# 뜬 상대는 이어 때린다

@@ -57,7 +57,7 @@ func _dev(shot: String, out: String) -> void:
 	elif shot == "lineup" or shot == "poses":
 		_clear()
 		var accs := ["flame", "claws", "wand", "gloves", "boots", "wings"]
-		var poses := ["jab_r", "kick", "upper", "swing", "slam", "cast", "slide", "knee", "shoot", "down"]
+		var poses := ["jab_r", "kick", "upper", "swing", "block", "cast", "slide", "knee", "shoot", "down"]
 		var n := 4 if shot == "lineup" else poses.size()
 		for i in n:
 			var f := Fighter.new()
@@ -247,7 +247,7 @@ func title() -> void:
 	row3.add_child(_btn("상점 · 장신구", shop, false, 200))
 	row3.add_child(_btn("라이선스", _licenses, false, 130))
 	v.add_child(row3)
-	v.add_child(_label("방향키 걷기 · 같은 방향 두 번 달리기 · Z 조준 · X 약(연타) · C 강(띄우기) · V 점프\nZ+X · Z+C 장신구 기술 · Z+X+C 필살기 · 달리며 X/C 대시 공격 · 달리며 X+C 대시 필살기\n공중 X/C · 공중 X+C 점프 필살기 · 무기 옆에서 X/C 줍기 · 문 앞에서 ↑ 들어가기\n띄운 상대는 이어 때릴 수 있고, 누운 상대는 못 때려요", 16, Color(1, 1, 1)))
+	v.add_child(_label("방향키 걷기 · 같은 방향 두 번 달리기 · Z 조준 · X 약(연타) · C 강(띄우기) · V 점프\nX+C 막기 · Z+X · Z+C 장신구 기술 · Z+X+C 필살기 · 달리며 X/C 대시 공격 · 달리며 X+C 대시 필살기\n공중 X/C · 공중 X+C 점프 필살기 · 무기 옆에서 X/C 줍기 · 문 앞에서 ↑ 들어가기\n띄운 상대는 이어 때릴 수 있고, 누운 상대는 못 때려요", 16, Color(1, 1, 1)))
 	go.call_deferred("grab_focus")
 
 func shop() -> void:
@@ -313,7 +313,8 @@ func _licenses() -> void:
 		"파이트 고! — 유민혁 (minhyuk94)",
 		"게임 엔진: Godot Engine (MIT 라이선스) — godotengine.org/license",
 		"글꼴: 갈무리 Galmuri (SIL Open Font License 1.1) — github.com/quiple/galmuri",
-		"캐릭터·무대·효과음·곡: 코드로 새로 만듦",
+		"캐릭터 모델·옷: Kenney Animated Characters Protagonists (CC0) — kenney.nl",
+		"동작·장신구·무기·무대·효과음·곡: 코드로 새로 만듦",
 	]
 	l.font_size = 18
 	menu.add_child(l)

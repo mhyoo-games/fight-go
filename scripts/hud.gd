@@ -46,6 +46,9 @@ func _draw() -> void:
 		var g := float(f.gauge) / 100.0
 		_bar(Rect2(x, y + 36 * u, bw, 12 * u), g, Color(1.0, 0.8, 0.2) if float(f.gauge) >= Rules.SUPER_COST else Color(0.4, 0.7, 1.0))
 		draw_rect(Rect2(x + bw * 0.5 - 1, y + 34 * u, 2, 16 * u), Color(1, 1, 1, 0.7))
+		var gd := float(f.guard) / float(f.S.guard)
+		if gd < 0.99 and alive:
+			_bar(Rect2(x, y + 52 * u, bw * 0.5, 5 * u), gd, Color(0.7, 0.9, 1.0))
 		if not alive:
 			_txt("탈락", Vector2(x, y + 28 * u), int(26 * u), Color(1, 0.4, 0.4), HORIZONTAL_ALIGNMENT_CENTER, bw)
 		else:
