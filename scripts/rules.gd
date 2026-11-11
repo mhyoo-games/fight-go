@@ -6,6 +6,7 @@ extends RefCounted
 ##   X X X 연타 · Z+X, Z+C 장신구 기술(무기를 들면 무기 기술) · Z+X+C 필살기(게이지 50)
 ##   달리면서 X·C = 대시 공격, 달리면서 X+C = 대시 필살기(게이지 25)
 ##   X+C 같이 누르고 있기 = 막기 (앞에서 오는 공격만. 많이 막으면 깨진다. 뒤에서 맞으면 그냥 맞는다)
+##   날아가다 땅에 닿기 직전 V = 낙법 · 누운 채 X나 C = 기상 공격(일어나며 둘레를 참)
 ##   공중 X·C, 공중 X+C = 점프 필살기(게이지 30) · 떨어진 무기 옆에서 X나 C = 줍기
 ## 누운 상대는 못 때린다. 공중에 뜬 상대는 이어 때릴 수 있다(JUG_MAX번까지).
 
@@ -23,7 +24,9 @@ const JUG_SCALE := 0.85
 const BLOCK_CHIP := 0.12        # 막으면 이만큼만 아프다
 const BLOCK_REGEN := 14.0       # 막기 힘이 1초에 돌아오는 양
 const BREAK_STUN := 1.0         # 막기가 깨지면 이만큼 멍해진다
-const GUARD_CANCEL := 0.07      # X와 C를 거의 같이 누르면 공격 대신 막기
+const GUARD_CANCEL := 0.07
+const TECH_WINDOW := 0.25         # 땅에 닿기 전 이 시간 안에 V = 낙법(바로 일어남)
+const FOOD_HEAL := 0.25           # 도시락: 체력의 이만큼 회복      # X와 C를 거의 같이 누르면 공격 대신 막기
 
 ## 유형: 다섯 능력치(1~10) STR 힘 · TEC 조준 거리 · SPD 빠르기 · JMP 점프 · DEF 맷집
 const STYLES := {
@@ -79,6 +82,7 @@ static func moves() -> Dictionary:
 			"d_x": _m("slide", 0.06, 0.25, 0.24, 7, 4, 5.5, 0.6, 1.0, 11.0, {"down": true}),
 			"d_c": _m("knee", 0.1, 0.2, 0.24, 10, 2.5, 10, 0.7, 1.0, 9.0, {"down": true}),
 			"d_super": _m("charge", 0.1, 0.35, 0.3, 16, 12, 7, 0.6, 1.3, 15.0, {"down": true, "cost": DASH_SUPER_COST, "inv": true}),
+			"wake": _m("slide", 0.08, 0.2, 0.34, 6, 8, 4, 0.0, 1.5, 0.0, {"down": true, "inv": true}),
 			"aim_x": _m("jab_r", 0.1, 0.1, 0.22, 8, 8, 2, 1.1, 0.95, 5.0, {"down": true}),
 			"aim_c": _m("kick", 0.28, 0.12, 0.3, 14, 11, 5, 1.2, 1.05, 6.0, {"down": true}),
 			"g_flurry": _m("rush", 0.1, 0.48, 0.2, 3, 0.8, 0, 1.0, 1.0, 2.5, {"rehit": 0.09, "stun": 0.25}),
@@ -143,7 +147,7 @@ static func new_fighter(id: int, style: String, acc: String, team: int, pos: Vec
 	return {"id": id, "style": style, "acc": acc, "S": S, "team": team, "pos": pos, "vel": Vector3.ZERO, "yaw": 0.0,
 		"hp": float(S.hp), "max_hp": float(S.hp), "gauge": 0.0, "state": "free", "t": 0.0, "m": {}, "hit": [], "rehit_t": 0.0,
 		"combo": 0, "combo_t": 0.0, "buf": false, "air": true, "jumps": int(S.jumps) - 1, "inv": 1.0, "stun": 0.0, "moving": false, "run": false,
-		"shot_done": false, "outs": 0, "aim": false, "jug": 0, "held": "", "uses": 0, "door_cd": 0.0, "dealt": 0.0, "kos": 0, "hits": 0, "guard": float(S.guard), "blocks": 0}
+		"shot_done": false, "outs": 0, "aim": false, "jug": 0, "held": "", "uses": 0, "door_cd": 0.0, "dealt": 0.0, "kos": 0, "hits": 0, "guard": float(S.guard), "blocks": 0, "tech_t": 0.0}
 
 static func fwd(yaw: float) -> Vector3:
 	return Vector3(sin(yaw), 0, cos(yaw))
@@ -342,6 +346,13 @@ static func step(f: Dictionary, inp: Dictionary, w: Dictionary, dt: float) -> vo
 			if f.air:
 				vel.x *= exp(-1.2 * dt)
 				vel.z *= exp(-1.2 * dt)
+				f.tech_t = TECH_WINDOW if inp.get("vp", false) else maxf(0.0, float(f.tech_t) - dt)
+			elif float(f.hp) > 0.0 and float(f.t) > 0.2 and (inp.get("xp", false) or inp.get("cp", false)):
+				# 기상 공격
+				f.jug = 0
+				f.vel = vel
+				_start(f, "wake", w)
+				vel = f.vel
 			else:
 				f.t = float(f.t) + dt
 				vel.x *= exp(-6.0 * dt)
@@ -381,6 +392,16 @@ static func step(f: Dictionary, inp: Dictionary, w: Dictionary, dt: float) -> vo
 		vel.y = 0.0
 		if f.air:
 			f.air = false
+			if str(f.state) == "down" and float(f.tech_t) > 0.0 and float(f.hp) > 0.0:
+				# 낙법: 눕지 않고 바로 일어난다
+				f.state = "getup"
+				f.t = 0.18
+				f.inv = 0.45
+				f.jug = 0
+				vel.x = 0.0
+				vel.z = 0.0
+				w.events.append({"e": "tech", "id": f.id})
+			f.tech_t = 0.0
 			w.events.append({"e": "land", "id": f.id, "hard": str(f.state) == "down"})
 		f.jumps = int(S.jumps) - 1
 	elif pos.y > g + 0.05:
@@ -415,9 +436,13 @@ static func _pickup(f: Dictionary, w: Dictionary) -> bool:
 	for i in items.size():
 		var it: Dictionary = items[i]
 		if (it.pos as Vector3).distance_to(f.pos) < 1.2:
+			items.remove_at(i)
+			if str(it.kind) == "food":
+				f.hp = minf(float(f.max_hp), float(f.hp) + float(f.max_hp) * FOOD_HEAL)
+				w.events.append({"e": "heal", "id": f.id})
+				return true
 			f.held = str(it.kind)
 			f.uses = int(it.uses)
-			items.remove_at(i)
 			w.events.append({"e": "pickup", "id": f.id})
 			return true
 	return false
@@ -607,6 +632,13 @@ static func ai_input(f: Dictionary, fs: Array, w: Dictionary, rnd: float, skill:
 	var stage: Dictionary = w.stage
 	var inp := {"mx": 0.0, "mz": 0.0}
 	var pos: Vector3 = f.pos
+	if str(f.state) == "down":
+		if f.air:
+			inp.vp = float(f.vel.y) < 0.0 and rnd < 0.12 * skill
+		else:
+			var near := nearest(f, fs, true, 1.6)
+			inp.xp = not near.is_empty() and rnd < 0.35 * skill
+		return inp
 	var tg := nearest(f, fs, true)
 	var goal := pos
 	var chase := not tg.is_empty()
@@ -638,7 +670,7 @@ static func ai_input(f: Dictionary, fs: Array, w: Dictionary, rnd: float, skill:
 	if str(f.held) == "" and not f.air:
 		for it in w.get("items", []):
 			var ip: Vector3 = it.pos
-			if ip.distance_to(pos) < 6.0 and absf(ip.y - pos.y) < 0.6 and (tg.is_empty() or ip.distance_to(pos) < (tg.pos as Vector3).distance_to(pos)):
+			if (str(it.kind) != "food" or float(f.hp) < float(f.max_hp) * 0.7) and ip.distance_to(pos) < 6.0 and absf(ip.y - pos.y) < 0.6 and (tg.is_empty() or ip.distance_to(pos) < (tg.pos as Vector3).distance_to(pos)):
 				goal = ip
 				chase = false
 				if ip.distance_to(pos) < 1.0:

@@ -107,8 +107,8 @@ func _spawn_item() -> void:
 		for it in w.items:
 			if (it.pos as Vector3).distance_to(p) < 1.5: free = false
 		if free:
-			var kind: String = ["bat", "bat", "rifle", "rifle", "bazooka"][rng.randi() % 5]
-			w.items.append({"kind": kind, "uses": int(Rules.WEAPONS[kind].uses), "pos": p})
+			var kind: String = ["bat", "bat", "rifle", "rifle", "bazooka", "food", "food"][rng.randi() % 7]
+			w.items.append({"kind": kind, "uses": int(Rules.WEAPONS[kind].uses) if kind != "food" else 1, "pos": p})
 			return
 
 func _key(k: Key) -> bool:
@@ -271,6 +271,13 @@ func _events() -> void:
 				_ring((e.pos as Vector3) + Vector3(0, -0.6, 0), float(e.r) * 1.2, Color(1.0, 0.7, 0.3))
 				shake = maxf(shake, 0.5)
 			"pickup": Sound.play("item", -4.0)
+			"heal":
+				Sound.play("gain", -2.0)
+				_burst((fs[int(e.id)].pos as Vector3) + Vector3(0, 1.0, 0), 1.8, Color(0.5, 1.0, 0.6))
+				_ring((fs[int(e.id)].pos as Vector3) + Vector3(0, 0.1, 0), 1.2, Color(0.5, 1.0, 0.6))
+			"tech":
+				Sound.play("jump", -4.0, 1.5)
+				_ring((fs[int(e.id)].pos as Vector3) + Vector3(0, 0.1, 0), 1.0, Color(1, 1, 1))
 			"door":
 				Sound.play("slide", -4.0)
 				if int(e.id) == focus:

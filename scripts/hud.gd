@@ -64,7 +64,7 @@ func _draw() -> void:
 		if str(me.held) == "" and Rules.alive(me):
 			for it in m.w.items:
 				if (it.pos as Vector3).distance_to(me.pos) < 1.2:
-					_txt("X 또는 C: %s 줍기" % Rules.WEAPONS[it.kind].name, Vector2(0, H * 0.62), int(24 * u), Color(1, 0.95, 0.6), HORIZONTAL_ALIGNMENT_CENTER, W)
+					_txt("X 또는 C: %s 줍기" % (Rules.WEAPONS[it.kind].name if it.kind != "food" else "도시락"), Vector2(0, H * 0.62), int(24 * u), Color(1, 0.95, 0.6), HORIZONTAL_ALIGNMENT_CENTER, W)
 		for d in m.w.stage.doors:
 			if (d.at as Vector3).distance_to(me.pos) < 1.0 and Rules.alive(me):
 				_txt("↑ 문으로 들어가기", Vector2(0, H * 0.66), int(24 * u), Color(0.7, 1.0, 0.8), HORIZONTAL_ALIGNMENT_CENTER, W)

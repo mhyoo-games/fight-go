@@ -513,6 +513,10 @@ func equip(acc: String) -> void:
 
 static func weapon_mesh(kind: String, into: Node3D, helper: Fighter) -> void:
 	match kind:
+		"food":
+			helper._m(into, box(Vector3(0.42, 0.2, 0.3)), Color("e0503a"), Vector3(0, 0.1, 0), Vector3(0, 0, -62))
+			helper._m(into, box(Vector3(0.44, 0.05, 0.32)), Color("f4f0e6"), Vector3(-0.1, 0.16, 0), Vector3(0, 0, -62))
+			helper._m(into, box(Vector3(0.12, 0.03, 0.34)), Color("ffd23a"), Vector3(0, 0.1, 0), Vector3(0, 0, -62))
 		"bat":
 			helper._m(into, cyl(0.055, 0.03, 0.8, 8), Color("d8b070"), Vector3(0, 0.33, 0))
 			helper._m(into, sph(0.055, 8), Color("d8b070"), Vector3(0, 0.73, 0))

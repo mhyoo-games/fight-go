@@ -247,7 +247,7 @@ func title() -> void:
 	row3.add_child(_btn("상점 · 장신구", shop, false, 200))
 	row3.add_child(_btn("라이선스", _licenses, false, 130))
 	v.add_child(row3)
-	v.add_child(_label("방향키 걷기 · 같은 방향 두 번 달리기 · Z 조준 · X 약(연타) · C 강(띄우기) · V 점프\nX+C 막기 · Z+X · Z+C 장신구 기술 · Z+X+C 필살기 · 달리며 X/C 대시 공격 · 달리며 X+C 대시 필살기\n공중 X/C · 공중 X+C 점프 필살기 · 무기 옆에서 X/C 줍기 · 문 앞에서 ↑ 들어가기\n띄운 상대는 이어 때릴 수 있고, 누운 상대는 못 때려요", 16, Color(1, 1, 1)))
+	v.add_child(_label("방향키 걷기 · 같은 방향 두 번 달리기 · Z 조준 · X 약(연타) · C 강(띄우기) · V 점프\nX+C 막기 · Z+X · Z+C 장신구 기술 · Z+X+C 필살기 · 달리며 X/C 대시 공격 · 달리며 X+C 대시 필살기\n공중 X/C · 공중 X+C 점프 필살기 · 무기 옆에서 X/C 줍기 · 문 앞에서 ↑ 들어가기\n날아가다 땅에 닿기 직전 V 낙법 · 누운 채 X/C 기상 공격 · 누운 상대는 못 때려요", 16, Color(1, 1, 1)))
 	go.call_deferred("grab_focus")
 
 func shop() -> void:

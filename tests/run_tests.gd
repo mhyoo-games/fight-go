@@ -32,7 +32,7 @@ func tap(fs: Array, w: Dictionary, id: int, inp: Dictionary) -> void:
 	run(fs, w, DT, {id: inp})
 
 func _init() -> void:
-	_data(); _move(); _dash(); _combo(); _juggle(); _guard(); _aim_and_acc(); _supers(); _stage(); _doors(); _shots(); _weapons(); _shop(); _ai_match()
+	_data(); _move(); _dash(); _combo(); _juggle(); _guard(); _rise(); _aim_and_acc(); _supers(); _stage(); _doors(); _shots(); _weapons(); _shop(); _ai_match()
 	print("통과 %d, 실패 %d" % [passes, fails])
 	quit(1 if fails > 0 else 0)
 
@@ -206,6 +206,47 @@ func _guard() -> void:
 	ok(d.state == "hurt" and d.stun >= 0.9, "막기 힘이 다하면 깨져서 멍해진다 (%s)" % d.state)
 	run([c, d], w, 3.0)
 	ok(d.guard > 20.0, "막기 힘은 다시 찬다")
+
+func _rise() -> void:
+	var w := world()
+	var a := mk(0)
+	var b := mk(1, "brawler", "none", Vector3(0, 0, 1.0))
+	var c := mk(2, "brawler", "none", Vector3(6, 0, 1.0))
+	var a2 := mk(3, "brawler", "none", Vector3(6, 0, 0))
+	# 낙법: b는 땅에 닿기 직전에 V, c는 가만히
+	tap([a, b], w, 0, {"cp": true, "c": true}); tap([a2, c], w, 3, {"cp": true, "c": true})
+	var tb := 0.0
+	var tc := 0.0
+	var t := 0.0
+	var teched := false
+	while t < 3.0 and (tb == 0.0 or tc == 0.0):
+		var press: bool = b.state == "down" and b.air and b.vel.y < 0.0 and b.pos.y < 0.6
+		Rules.step(a, {}, w, DT); Rules.step(a2, {}, w, DT)
+		Rules.step(b, {"vp": true} if press else {}, w, DT); Rules.step(c, {}, w, DT)
+		Rules.resolve([a, b], w, DT); Rules.resolve([a2, c], w, DT)
+		for e in w.events:
+			if e.e == "tech": teched = true
+		w.events.clear()
+		t += DT
+		if tb == 0.0 and b.state == "free" and b.hp < b.max_hp: tb = t
+		if tc == 0.0 and c.state == "free" and c.hp < c.max_hp: tc = t
+	ok(teched and tb > 0.0 and tb < tc - 0.4, "낙법이면 훨씬 빨리 일어난다 (%.2f, %.2f)" % [tb, tc])
+	# 기상 공격
+	var d := mk(4, "brawler", "none", Vector3(-6, 0, 0))
+	var e2 := mk(5, "titan", "none", Vector3(-6, 0, 1.0))
+	d.state = "down"; d.t = 0.3
+	tap([d, e2], w, 4, {"xp": true, "x": true})
+	ok(d.state == "atk" and d.m.id == "wake", "누운 채 X = 기상 공격")
+	run([d, e2], w, 0.4)
+	ok(e2.hp < e2.max_hp and e2.state == "down", "기상 공격은 둘레를 쳐서 눕힌다")
+	run([d, e2], w, 0.6)
+	ok(d.state == "free", "그리고 일어선다")
+	# 도시락
+	var f := mk(6, "brawler", "none", Vector3(-10, 0, 0))
+	f.hp = 50.0
+	w.items.append({"kind": "food", "uses": 1, "pos": Vector3(-10, 0, 0.3)})
+	tap([f], w, 6, {"xp": true, "x": true})
+	ok(f.hp > 90.0 and f.held == "" and w.items.is_empty(), "도시락을 주우면 체력이 찬다")
 
 func _aim_and_acc() -> void:
 	var w := world()
